@@ -77,6 +77,7 @@ class Wicket_Integration {
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/frontend/class-wicket-sign-up.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/frontend/class-profile-edit-mode.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/frontend/class-company-functions.php';
+        require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/frontend/class-section-functions.php';
 
         // Fluent Forms Handlers
      
