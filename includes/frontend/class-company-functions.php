@@ -550,16 +550,16 @@ class Wicket_Company_Functions {
                 'synced_at' => current_time('mysql')
             )
         );
-        
+
         // Sync user connections
         $orgs = wicket_organizations();
         $orgs->sync_user_connections($user_id);
-        
-        // Set as primary if first company
-        $primary = get_user_meta($user_id, 'wicket_primary_org_uuid', true);
-        if (empty($primary)) {
-            update_user_meta($user_id, 'wicket_primary_org_uuid', $org_uuid);
-        }
+
+        // Always set newly created company as primary (user created it from Change Org modal)
+        update_user_meta($user_id, 'wicket_primary_org_uuid', $org_uuid);
+
+        // Update organization user_meta for Bricks Dynamic Data
+        $this->update_org_user_meta($user_id, $org_uuid);
         
         wp_send_json_success(array(
             'message' => 'Company created and added successfully',
