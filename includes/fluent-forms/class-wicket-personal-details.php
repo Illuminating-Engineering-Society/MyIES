@@ -16,13 +16,15 @@ if (!defined('ABSPATH')) {
 }
 
 class Wicket_Personal_Details_Sync {
-    
-    private $form_id = 49;
-    
+
+    private $form_id;
+
     public function __construct() {
+        // Use configurable form ID constant (defined in class-wicket-api-helper.php)
+        $this->form_id = defined('MYIES_FORM_PERSONAL_DETAILS') ? MYIES_FORM_PERSONAL_DETAILS : 49;
         add_action('fluentform/submission_inserted', array($this, 'sync_to_wicket'), 20, 3);
     }
-    
+
     /**
      * Sync personal details to Wicket API
      */
@@ -30,44 +32,44 @@ class Wicket_Personal_Details_Sync {
         if ($form->id != $this->form_id) {
             return;
         }
-        
-        error_log('[Wicket Personal Details] ========================================');
-        error_log('[Wicket Personal Details] Processing Form ' . $this->form_id);
+
+        myies_log('========================================', 'Wicket Personal Details');
+        myies_log('Processing Form ' . $this->form_id, 'Wicket Personal Details');
         
         $user_id = get_current_user_id();
         if (!$user_id) {
-            error_log('[Wicket Personal Details] No logged-in user');
+            myies_log('No logged-in user', 'Personal Details');
             return;
         }
-        
+
         $person_uuid = wicket_api()->get_person_uuid($user_id);
         if (empty($person_uuid)) {
-            error_log('[Wicket Personal Details] Could not find person UUID');
+            myies_log('Could not find person UUID', 'Personal Details');
             return;
         }
-        
-        error_log('[Wicket Personal Details] User ID: ' . $user_id . ', Person UUID: ' . $person_uuid);
-        
+
+        myies_log('User ID: ' . $user_id . ', Person UUID: ' . $person_uuid, 'Personal Details');
+
         // 1. Update person attributes
         $person_attributes = $this->build_person_attributes($form_data);
         if (!empty($person_attributes)) {
             $result = wicket_api()->update_person($person_uuid, $person_attributes);
             if ($result['success']) {
-                error_log('[Wicket Personal Details] ✓ Person attributes synced');
+                myies_log('Person attributes synced', 'Personal Details');
             } else {
-                error_log('[Wicket Personal Details] ✗ Person sync failed: ' . $result['message']);
+                myies_log('Person sync failed: ' . $result['message'], 'Personal Details');
             }
         }
-        
+
         // 2. Update phone if provided
         if (!empty($form_data['phone'])) {
             $this->sync_phone($user_id, $person_uuid, $form_data['phone']);
         }
-        
+
         // 3. Update local meta
         $this->update_local_meta($user_id, $form_data);
-        
-        error_log('[Wicket Personal Details] ========================================');
+
+        myies_log('Sync complete', 'Personal Details');
     }
     
     /**
@@ -119,23 +121,23 @@ class Wicket_Personal_Details_Sync {
         
         if (!empty($phone_uuid)) {
             // Update existing phone
-            error_log('[Wicket Personal Details] Updating phone: ' . $phone_uuid);
+            myies_log('Updating phone: ' . $phone_uuid, 'Personal Details');
             $result = wicket_api()->update_phone($phone_uuid, $phone_data);
         } else {
             // Create new phone
-            error_log('[Wicket Personal Details] Creating new phone');
+            myies_log('Creating new phone', 'Personal Details');
             $result = wicket_api()->create_phone($person_uuid, $phone_data);
-            
+
             // Save the new phone UUID
             if ($result['success'] && !empty($result['data']['data']['id'])) {
                 update_user_meta($user_id, 'wicket_phone_uuid', $result['data']['data']['id']);
             }
         }
-        
+
         if ($result['success']) {
-            error_log('[Wicket Personal Details] ✓ Phone synced');
+            myies_log('Phone synced', 'Personal Details');
         } else {
-            error_log('[Wicket Personal Details] ✗ Phone sync failed: ' . $result['message']);
+            myies_log('Phone sync failed: ' . $result['message'], 'Personal Details');
         }
     }
     
@@ -162,7 +164,7 @@ class Wicket_Personal_Details_Sync {
             $timestamp = strtotime($iso_date);
             
             if ($timestamp === false || $timestamp > time()) {
-                error_log("[Wicket Personal Details] Invalid or future date: {$date}");
+                myies_log("Invalid or future date: {$date}", 'Personal Details');
                 return null;
             }
             

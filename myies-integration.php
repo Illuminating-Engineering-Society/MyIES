@@ -57,6 +57,9 @@ class Wicket_Integration {
      * Load required files
      */
     private function load_dependencies() {
+        // GitHub Updater (must load early for update checks)
+        require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/class-github-updater.php';
+
         // Core functionality
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/class-person-details.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/class-wicket-bulk-sync.php';
