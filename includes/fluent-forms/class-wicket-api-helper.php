@@ -1,10 +1,10 @@
 <?php
 /**
  * Wicket API Helper Class
- * 
+ *
  * Centralized helper functions for Wicket API integration.
- * All Fluent Forms handlers should use this class for common operations.
- * 
+ * All classes should use this singleton for API operations.
+ *
  * @package MyIES_Integration
  * @since 1.0.0
  */
@@ -13,8 +13,41 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+// Define plugin debug constant if not set
+if (!defined('MYIES_DEBUG')) {
+    define('MYIES_DEBUG', defined('WP_DEBUG') && WP_DEBUG);
+}
+
+// Define configurable form IDs (can be overridden in wp-config.php)
+if (!defined('MYIES_FORM_PERSONAL_DETAILS')) {
+    define('MYIES_FORM_PERSONAL_DETAILS', 49);
+}
+if (!defined('MYIES_FORM_PROFESSIONAL_INFO')) {
+    define('MYIES_FORM_PROFESSIONAL_INFO', 50);
+}
+if (!defined('MYIES_FORM_ADDRESS')) {
+    define('MYIES_FORM_ADDRESS', 51);
+}
+if (!defined('MYIES_FORM_CONTACT_DETAILS')) {
+    define('MYIES_FORM_CONTACT_DETAILS', 23);
+}
+
+/**
+ * Debug logging helper function
+ *
+ * Only logs when MYIES_DEBUG is true (inherits from WP_DEBUG by default)
+ *
+ * @param string $message Log message
+ * @param string $context Optional context/class name
+ */
+function myies_log($message, $context = 'MyIES') {
+    if (MYIES_DEBUG) {
+        error_log("[{$context}] {$message}");
+    }
+}
+
 class Wicket_API_Helper {
-    
+
     private static $instance = null;
     private $person_uuid_cache = array();
     

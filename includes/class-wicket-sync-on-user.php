@@ -28,10 +28,10 @@ class WicketLoginSync {
     }
     
     public function init() {
-        // Add admin hooks for configuration if needed
+        // Settings are now handled by the unified settings page
+        // in class-wicket-settings-page.php
         if (is_admin()) {
             add_action('admin_init', array($this, 'register_settings'));
-            add_action('admin_menu', array($this, 'add_admin_menu'));
         }
     }
     
@@ -738,162 +738,6 @@ class WicketLoginSync {
         register_setting('wicket_login_sync', 'wicket_registration_sync_enabled');
     }
     
-    /**
-     * Add admin menu
-     */
-    public function add_admin_menu() {
-        add_options_page(
-            'Wicket Login Sync Settings',
-            'Wicket Login Sync',
-            'manage_options',
-            'wicket-login-sync',
-            array($this, 'admin_page')
-        );
-    }
-    
-    /**
-     * Admin settings page
-     */
-    public function admin_page() {
-        if (isset($_POST['submit'])) {
-            update_option('wicket_login_sync_enabled', isset($_POST['wicket_login_sync_enabled']) ? 1 : 0);
-            update_option('wicket_login_sync_interval', (int)$_POST['wicket_login_sync_interval']);
-            update_option('wicket_login_sync_core_fields', isset($_POST['wicket_login_sync_core_fields']) ? 1 : 0);
-            update_option('wicket_login_sync_communications', isset($_POST['wicket_login_sync_communications']) ? 1 : 0);
-            update_option('wicket_registration_sync_enabled', isset($_POST['wicket_registration_sync_enabled']) ? 1 : 0);
-            echo '<div class="notice notice-success"><p>Settings saved!</p></div>';
-        }
-        
-        $enabled = get_option('wicket_login_sync_enabled', 1);
-        $interval = get_option('wicket_login_sync_interval', 3600);
-        $core_fields = get_option('wicket_login_sync_core_fields', 1);
-        $communications = get_option('wicket_login_sync_communications', 1);
-        $registration_sync = get_option('wicket_registration_sync_enabled', 1);
-        ?>
-        <div class="wrap">
-            <h1>Wicket Login Sync Settings</h1>
-            <form method="post" action="">
-                <table class="form-table">
-                    <tr>
-                        <th scope="row">Enable Login Sync</th>
-                        <td>
-                            <input type="checkbox" name="wicket_login_sync_enabled" value="1" <?php checked($enabled); ?> />
-                            <p class="description">Enable automatic user sync on login</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Enable Registration Sync</th>
-                        <td>
-                            <input type="checkbox" name="wicket_registration_sync_enabled" value="1" <?php checked($registration_sync); ?> />
-                            <p class="description">Enable automatic user sync after registration (including auto-login)</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Sync Interval (seconds)</th>
-                        <td>
-                            <input type="number" name="wicket_login_sync_interval" value="<?php echo esc_attr($interval); ?>" min="300" />
-                            <p class="description">Minimum time between syncs for the same user (default: 3600 = 1 hour). Registration syncs use a 1-minute interval.</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Sync Core Fields</th>
-                        <td>
-                            <input type="checkbox" name="wicket_login_sync_core_fields" value="1" <?php checked($core_fields); ?> />
-                            <p class="description">Update WordPress first_name and last_name fields</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Sync Communications</th>
-                        <td>
-                            <input type="checkbox" name="wicket_login_sync_communications" value="1" <?php checked($communications); ?> />
-                            <p class="description">Sync communication preferences and sublists</p>
-                        </td>
-                    </tr>
-                </table>
-                <?php submit_button(); ?>
-            </form>
-            
-            <h2>Configuration Status</h2>
-            <?php
-            $config = $this->get_wicket_config();
-            if ($config['valid']) {
-                echo '<p style="color: green;">✓ Wicket API configuration is valid</p>';
-                echo '<p><strong>Tenant:</strong> ' . esc_html($config['tenant']) . '</p>';
-                echo '<p><strong>Environment:</strong> ' . ($config['is_staging'] ? 'Staging' : 'Production') . '</p>';
-            } else {
-                echo '<p style="color: red;">✗ Configuration Error: ' . esc_html($config['error']) . '</p>';
-                echo '<p>Please check your Wicket API settings.</p>';
-            }
-            ?>
-            
-            <h2>Synced Fields Reference</h2>
-            <p>The following user meta fields are synced from Wicket:</p>
-            <table class="widefat" style="max-width: 800px;">
-                <thead>
-                    <tr>
-                        <th>Category</th>
-                        <th>Wicket Field</th>
-                        <th>WordPress Meta Key</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    <tr><td rowspan="4"><strong>Identity</strong></td><td>uuid</td><td><code>wicket_uuid</code></td></tr>
-                    <tr><td>full_name</td><td><code>wicket_full_name</code></td></tr>
-                    <tr><td>alternate_name</td><td><code>wicket_alternate_name</code></td></tr>
-                    <tr><td>nickname</td><td><code>wicket_nickname</code></td></tr>
-                    
-                    <tr><td rowspan="3"><strong>Professional</strong></td><td>job_title</td><td><code>wicket_job_title</code></td></tr>
-                    <tr><td>job_level</td><td><code>wicket_job_level</code></td></tr>
-                    <tr><td>job_function</td><td><code>wicket_job_function</code></td></tr>
-                    
-                    <tr><td rowspan="4"><strong>Personal</strong></td><td>gender</td><td><code>wicket_gender</code></td></tr>
-                    <tr><td>birth_date</td><td><code>wicket_birth_date</code></td></tr>
-                    <tr><td>preferred_pronoun</td><td><code>wicket_preferred_pronoun</code></td></tr>
-                    <tr><td>honorific_prefix</td><td><code>wicket_honorific_prefix</code></td></tr>
-                    
-                    <tr><td rowspan="4"><strong>Phone</strong></td><td>number</td><td><code>wicket_phone</code></td></tr>
-                    <tr><td>number_international_format</td><td><code>wicket_phone_international</code></td></tr>
-                    <tr><td>number_national_format</td><td><code>wicket_phone_national</code></td></tr>
-                    <tr><td>type</td><td><code>wicket_phone_type</code></td></tr>
-                    
-                    <tr><td rowspan="7"><strong>Address</strong></td><td>address1</td><td><code>wicket_address1</code></td></tr>
-                    <tr><td>address2</td><td><code>wicket_address2</code></td></tr>
-                    <tr><td>city</td><td><code>wicket_city</code></td></tr>
-                    <tr><td>state_name</td><td><code>wicket_state</code></td></tr>
-                    <tr><td>zip_code</td><td><code>wicket_zip_code</code></td></tr>
-                    <tr><td>country_name</td><td><code>wicket_country_name</code></td></tr>
-                    <tr><td>formatted_address_label</td><td><code>wicket_formatted_address</code></td></tr>
-                    
-                    <tr><td rowspan="6"><strong>Organization</strong></td><td>org_uuid</td><td><code>wicket_org_uuid</code></td></tr>
-                    <tr><td>legal_name</td><td><code>wicket_org_name</code></td></tr>
-                    <tr><td>type</td><td><code>wicket_org_type</code></td></tr>
-                    <tr><td>alternate_name</td><td><code>wicket_org_alternate_name</code></td></tr>
-                    <tr><td>connection_uuid</td><td><code>wicket_connection_uuid</code></td></tr>
-                    <tr><td>connection_type</td><td><code>wicket_connection_type</code></td></tr>
-                </tbody>
-            </table>
-            
-            <h3>Using Organization in Bricks Builder</h3>
-            <p>To display the user's organization in Bricks, use Dynamic Data with user meta:</p>
-            <ul>
-                <li><code>{user_meta:wicket_org_name}</code> - Organization name</li>
-                <li><code>{user_meta:wicket_org_type}</code> - Organization type</li>
-                <li><code>{user_meta:wicket_org_uuid}</code> - Organization UUID</li>
-            </ul>
-            
-            <h2>Debug Information</h2>
-            <p>If sync isn't working after registration, check your error logs for messages starting with "Wicket Sync:"</p>
-            <p><strong>Active Hooks:</strong></p>
-            <ul>
-                <li>wp_login (normal login)</li>
-                <li>user_register (immediately after registration)</li>
-                <li>wp_loaded (catches auto-login after registration)</li>
-                <li>fluentform_user_registration_completed (FluentForms specific)</li>
-                <li>wp_set_current_user (general auto-login detection)</li>
-            </ul>
-        </div>
-        <?php
-    }
 }
 
 // Initialize the sync system

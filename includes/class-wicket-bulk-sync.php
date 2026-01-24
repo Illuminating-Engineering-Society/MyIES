@@ -42,41 +42,33 @@ class WicketBulkSync {
         ?>
         
         <div class="wrap" style="margin-top: 30px;">
-            <h2><?php _e('Bulk User Sync', 'wicket-acf-sync'); ?></h2>
+            <h2><?php _e('Bulk User Sync', 'wicket-integration'); ?></h2>
             
             <div class="card">
-                <h3><?php _e('Sync All Users with Wicket', 'wicket-acf-sync'); ?></h3>
-                <p><?php printf(__('Total WordPress users: <strong>%d</strong>', 'wicket-acf-sync'), $total_users); ?></p>
+                <h3><?php _e('Sync All Users with Wicket', 'wicket-integration'); ?></h3>
+                <p><?php printf(__('Total WordPress users: <strong>%d</strong>', 'wicket-integration'), $total_users); ?></p>
                 
                 <?php if ($last_bulk_sync): ?>
-                    <p><?php printf(__('Last bulk sync: <strong>%s</strong>', 'wicket-acf-sync'), 
+                    <p><?php printf(__('Last bulk sync: <strong>%s</strong>', 'wicket-integration'), 
                         date_i18n(get_option('date_format') . ' ' . get_option('time_format'), strtotime($last_bulk_sync))); ?></p>
                 <?php endif; ?>
                 
                 <div id="bulk-sync-container">
                     <?php if (!$sync_in_progress): ?>
                         <button type="button" id="start-bulk-sync-btn" class="button button-primary">
-                            <?php _e('Start Bulk Sync', 'wicket-acf-sync'); ?>
+                            <?php _e('Start Bulk Sync', 'wicket-integration'); ?>
                         </button>
                         <p class="description">
-                            <?php printf(__('This will sync all %d users with Wicket data. The process runs in batches to avoid timeouts.', 'wicket-acf-sync'), $total_users); ?>
+                            <?php printf(__('This will sync all %d users with Wicket data. The process runs in batches to avoid timeouts.', 'wicket-integration'), $total_users); ?>
                         </p>
                     <?php else: ?>
                         <button type="button" id="cancel-bulk-sync-btn" class="button button-secondary">
-                            <?php _e('Cancel Sync', 'wicket-acf-sync'); ?>
+                            <?php _e('Cancel Sync', 'wicket-integration'); ?>
                         </button>
                         <p class="description" style="color: #d63638;">
-                            <?php _e('Bulk sync is currently in progress...', 'wicket-acf-sync'); ?>
+                            <?php _e('Bulk sync is currently in progress...', 'wicket-integration'); ?>
                         </p>
                     <?php endif; ?>
-                </div>
-                
-                <!-- Debug info -->
-                <div id="debug-info" style="margin-top: 20px; padding: 10px; background: #f0f8ff; border: 1px solid #cce7ff; border-radius: 4px;">
-                    <strong>Debug Info:</strong><br>
-                    AJAX URL: <?php echo admin_url('admin-ajax.php'); ?><br>
-                    Nonce: <span id="nonce-value"><?php echo wp_create_nonce('wicket_bulk_sync'); ?></span><br>
-                    Current User Can Manage Options: <?php echo current_user_can('manage_options') ? 'Yes' : 'No'; ?>
                 </div>
                 
                 <!-- Progress container -->
@@ -114,7 +106,7 @@ class WicketBulkSync {
      */
     public function enqueue_bulk_sync_scripts($hook) {
         // Check if we're on the correct admin page
-        if (strpos($hook, 'wicket-acf-sync') === false) {
+        if (strpos($hook, 'wicket-integration') === false) {
             return;
         }
         
@@ -128,11 +120,11 @@ class WicketBulkSync {
             'ajax_url' => admin_url('admin-ajax.php'),
             'nonce' => wp_create_nonce('wicket_bulk_sync'),
             'messages' => array(
-                'starting' => __('Starting bulk sync...', 'wicket-acf-sync'),
-                'processing' => __('Processing batch...', 'wicket-acf-sync'),
-                'completed' => __('Bulk sync completed!', 'wicket-acf-sync'),
-                'cancelled' => __('Bulk sync cancelled.', 'wicket-acf-sync'),
-                'error' => __('An error occurred during bulk sync.', 'wicket-acf-sync')
+                'starting' => __('Starting bulk sync...', 'wicket-integration'),
+                'processing' => __('Processing batch...', 'wicket-integration'),
+                'completed' => __('Bulk sync completed!', 'wicket-integration'),
+                'cancelled' => __('Bulk sync cancelled.', 'wicket-integration'),
+                'error' => __('An error occurred during bulk sync.', 'wicket-integration')
             )
         ));
         

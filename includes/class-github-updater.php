@@ -428,80 +428,8 @@ function myies_init_github_updater() {
 }
 add_action('admin_init', 'myies_init_github_updater');
 
-/**
- * Add GitHub repo setting to the settings page
- */
-function myies_add_github_setting_section() {
-    $github_repo = get_option('myies_github_repo', 'Illuminating-Engineering-Society/MyIES');
-
-    // Handle form submission
-    if (isset($_POST['myies_github_repo']) && current_user_can('manage_options')) {
-        $new_repo = sanitize_text_field($_POST['myies_github_repo']);
-        if (!empty($new_repo) && strpos($new_repo, '/') !== false) {
-            update_option('myies_github_repo', $new_repo);
-            $github_repo = $new_repo;
-            // Clear update cache
-            delete_transient('myies_github_response');
-        }
-    }
-    ?>
-    <div class="wrap" style="margin-top: 30px;">
-        <h2><?php _e('GitHub Updates', 'wicket-integration'); ?></h2>
-
-        <div class="card">
-            <h3><?php _e('Plugin Update Settings', 'wicket-integration'); ?></h3>
-            <p><?php _e('This plugin checks for updates from a GitHub repository. Configure your repository below.', 'wicket-integration'); ?></p>
-
-            <table class="form-table">
-                <tr>
-                    <th scope="row"><?php _e('GitHub Repository', 'wicket-integration'); ?></th>
-                    <td>
-                        <input type="text"
-                               name="myies_github_repo"
-                               value="<?php echo esc_attr($github_repo); ?>"
-                               class="regular-text"
-                               placeholder="owner/repository" />
-                        <p class="description">
-                            <?php _e('Format: owner/repository (e.g., Illuminating-Engineering-Society/MyIES)', 'wicket-integration'); ?>
-                        </p>
-                    </td>
-                </tr>
-                <tr>
-                    <th scope="row"><?php _e('Current Version', 'wicket-integration'); ?></th>
-                    <td>
-                        <code><?php echo esc_html(WICKET_INTEGRATION_VERSION); ?></code>
-                    </td>
-                </tr>
-                <tr>
-                    <th scope="row"><?php _e('Private Repository', 'wicket-integration'); ?></th>
-                    <td>
-                        <?php if (defined('MYIES_GITHUB_TOKEN') && !empty(MYIES_GITHUB_TOKEN)): ?>
-                            <span style="color: green;">&#10003; <?php _e('GitHub token configured in wp-config.php', 'wicket-integration'); ?></span>
-                        <?php else: ?>
-                            <span style="color: gray;"><?php _e('No token configured (public repo)', 'wicket-integration'); ?></span>
-                            <p class="description">
-                                <?php _e('For private repositories, add to wp-config.php:', 'wicket-integration'); ?><br>
-                                <code>define('MYIES_GITHUB_TOKEN', 'your-github-personal-access-token');</code>
-                            </p>
-                        <?php endif; ?>
-                    </td>
-                </tr>
-            </table>
-
-            <?php submit_button(__('Save Repository', 'wicket-integration'), 'secondary', 'submit_github'); ?>
-
-            <h4><?php _e('Creating Releases', 'wicket-integration'); ?></h4>
-            <ol>
-                <li><?php _e('Update the version number in myies-integration.php header', 'wicket-integration'); ?></li>
-                <li><?php _e('Commit and push your changes to GitHub', 'wicket-integration'); ?></li>
-                <li><?php _e('Create a new Release on GitHub with a tag matching the version (e.g., v1.0.1)', 'wicket-integration'); ?></li>
-                <li><?php _e('WordPress will detect the new version within 12 hours (or force check on Plugins page)', 'wicket-integration'); ?></li>
-            </ol>
-        </div>
-    </div>
-    <?php
-}
-add_action('wicket_acf_sync_settings_after_form', 'myies_add_github_setting_section', 5);
+// GitHub settings are now integrated into the unified settings page
+// in class-wicket-settings-page.php under the "Updates" tab
 
 /**
  * Show admin notice after manual update check
