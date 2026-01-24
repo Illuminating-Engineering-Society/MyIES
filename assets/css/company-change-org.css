@@ -1,0 +1,395 @@
+/**
+ * Wicket Company - Change Organization Styles
+ * 
+ * Styles for the organization search modal and related components.
+ * These styles are designed to be minimal and easy to override.
+ */
+
+/* =========================================================================
+   MODAL
+   ========================================================================= */
+
+.wicket-modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 99999;
+    overflow-y: auto;
+    padding: 20px;
+    box-sizing: border-box;
+}
+
+.wicket-modal-content {
+    position: relative;
+    background: #ffffff;
+    max-width: 500px;
+    margin: 40px auto;
+    padding: 30px;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+
+.wicket-modal-close {
+    position: absolute;
+    top: 15px;
+    right: 15px;
+    background: none;
+    border: none;
+    font-size: 28px;
+    color: #999;
+    cursor: pointer;
+    padding: 0;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.wicket-modal-close:hover {
+    color: #333;
+}
+
+.wicket-modal-title {
+    margin: 0 0 20px 0;
+    font-size: 22px;
+    font-weight: 600;
+    color: #333;
+}
+
+/* =========================================================================
+   SEARCH INPUT
+   ========================================================================= */
+
+.wicket-search-container {
+    position: relative;
+    margin-bottom: 15px;
+}
+
+.wicket-search-input {
+    width: 100%;
+    padding: 12px 45px 12px 15px;
+    font-size: 16px;
+    border: 2px solid #e0e0e0;
+    border-radius: 6px;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    box-sizing: border-box;
+}
+
+.wicket-search-input:focus {
+    border-color: #3c5a6e;
+    box-shadow: 0 0 0 3px rgba(60, 90, 110, 0.1);
+}
+
+.wicket-search-input::placeholder {
+    color: #999;
+}
+
+.wicket-search-icon {
+    position: absolute;
+    right: 15px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #999;
+    pointer-events: none;
+}
+
+/* =========================================================================
+   SEARCH RESULTS
+   ========================================================================= */
+
+.wicket-search-results {
+    max-height: 300px;
+    overflow-y: auto;
+    margin-bottom: 15px;
+}
+
+.wicket-results-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border: 1px solid #e0e0e0;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.wicket-org-result-item {
+    padding: 12px 15px;
+    cursor: pointer;
+    border-bottom: 1px solid #f0f0f0;
+    transition: background-color 0.15s;
+}
+
+.wicket-org-result-item:last-child {
+    border-bottom: none;
+}
+
+.wicket-org-result-item:hover,
+.wicket-org-result-item.focused {
+    background-color: #f5f8fa;
+}
+
+.wicket-org-name {
+    font-weight: 500;
+    color: #333;
+    margin-bottom: 2px;
+}
+
+.wicket-org-name mark {
+    background-color: #fff3cd;
+    padding: 0 2px;
+    border-radius: 2px;
+}
+
+.wicket-org-type {
+    font-size: 13px;
+    color: #777;
+}
+
+/* Loading and messages */
+.wicket-search-loading,
+.wicket-search-error,
+.wicket-no-results {
+    padding: 15px;
+    text-align: center;
+    color: #666;
+}
+
+.wicket-search-error {
+    color: #d32f2f;
+}
+
+/* =========================================================================
+   ADD NEW COMPANY LINK
+   ========================================================================= */
+
+.wicket-add-new-company {
+    padding: 15px;
+    text-align: center;
+    color: #3c5a6e;
+    cursor: pointer;
+    border: 1px dashed #ccc;
+    border-radius: 6px;
+    margin-top: 10px;
+    transition: all 0.2s;
+}
+
+.wicket-add-new-company:hover {
+    background-color: #f5f8fa;
+    border-color: #3c5a6e;
+}
+
+.wicket-add-new-icon {
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    line-height: 18px;
+    text-align: center;
+    background-color: #3c5a6e;
+    color: white;
+    border-radius: 50%;
+    margin-right: 8px;
+    font-weight: bold;
+}
+
+/* =========================================================================
+   SELECTED ORGANIZATION
+   ========================================================================= */
+
+.wicket-selected-org {
+    background-color: #e8f5e9;
+    border: 1px solid #c8e6c9;
+    border-radius: 6px;
+    padding: 12px 15px;
+    margin-bottom: 15px;
+}
+
+.wicket-selected-info {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.wicket-selected-label {
+    color: #666;
+    font-size: 14px;
+}
+
+.wicket-selected-name {
+    font-weight: 600;
+    color: #2e7d32;
+    flex: 1;
+}
+
+.wicket-selected-clear {
+    background: none;
+    border: none;
+    font-size: 20px;
+    color: #999;
+    cursor: pointer;
+    padding: 0 5px;
+    line-height: 1;
+}
+
+.wicket-selected-clear:hover {
+    color: #d32f2f;
+}
+
+/* =========================================================================
+   BUTTONS
+   ========================================================================= */
+
+.wicket-modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid #e0e0e0;
+}
+
+.wicket-btn {
+    padding: 10px 20px;
+    font-size: 15px;
+    font-weight: 500;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.wicket-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.wicket-btn-primary {
+    background-color: #3c5a6e;
+    color: white;
+}
+
+.wicket-btn-primary:hover:not(:disabled) {
+    background-color: #2d4554;
+}
+
+.wicket-btn-secondary {
+    background-color: #f5f5f5;
+    color: #333;
+    border: 1px solid #ddd;
+}
+
+.wicket-btn-secondary:hover:not(:disabled) {
+    background-color: #e8e8e8;
+}
+
+/* =========================================================================
+   ADD NEW COMPANY FORM
+   ========================================================================= */
+
+.wicket-add-new-form {
+    padding: 15px;
+    background-color: #f9f9f9;
+    border-radius: 6px;
+}
+
+.wicket-add-new-form h4 {
+    margin: 0 0 15px 0;
+    font-size: 16px;
+    color: #333;
+}
+
+.wicket-form-group {
+    margin-bottom: 15px;
+}
+
+.wicket-form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 500;
+    color: #555;
+    font-size: 14px;
+}
+
+.wicket-input,
+.wicket-select {
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 15px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    box-sizing: border-box;
+}
+
+.wicket-input:focus,
+.wicket-select:focus {
+    border-color: #3c5a6e;
+    outline: none;
+}
+
+.wicket-form-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+/* =========================================================================
+   NOTIFICATIONS
+   ========================================================================= */
+
+.wicket-notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 15px 25px;
+    border-radius: 6px;
+    font-weight: 500;
+    z-index: 100000;
+    transform: translateX(100%);
+    opacity: 0;
+    transition: all 0.3s ease;
+}
+
+.wicket-notification.show {
+    transform: translateX(0);
+    opacity: 1;
+}
+
+.wicket-notification-success {
+    background-color: #4caf50;
+    color: white;
+}
+
+.wicket-notification-error {
+    background-color: #f44336;
+    color: white;
+}
+
+/* =========================================================================
+   RESPONSIVE
+   ========================================================================= */
+
+@media (max-width: 600px) {
+    .wicket-modal {
+        padding: 10px;
+    }
+    
+    .wicket-modal-content {
+        margin: 20px auto;
+        padding: 20px;
+    }
+    
+    .wicket-modal-actions {
+        flex-direction: column;
+    }
+    
+    .wicket-btn {
+        width: 100%;
+    }
+    
+    .wicket-form-actions {
+        flex-direction: column;
+    }
+}
