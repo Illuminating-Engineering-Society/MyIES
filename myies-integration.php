@@ -3,7 +3,7 @@
  * Plugin Name: MyIES Integration
  * Plugin URI: https://s-fx.com
  * Description: Comprehensive integration between Wicket CRM and WordPress with Paid Memberships Pro support
- * Version: 1.0.2
+ * Version: 1.0.3
  * Author: S-FX.com Small Business Solutions
  * Author URI: https://s-fx.com
  * License: GPL v2 or later
@@ -66,6 +66,7 @@ class Wicket_Integration {
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/class-wicket-sync-on-user.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/class-wicket-person-auto-create.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/class-wicket-organizations.php';
+        require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/class-wicket-memberships.php';
 
         // Admin & Settings
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/admin/class-wicket-settings-page.php';
@@ -111,10 +112,17 @@ class Wicket_Integration {
      * Plugin activation
      */
     public function activate() {
+
         // Create organization tables
         if (class_exists('Wicket_Organizations')) {
             $orgs = Wicket_Organizations::get_instance();
             $orgs->create_tables();
+        }
+
+        // Create memberships table
+        if (class_exists('Wicket_Memberships')) {
+            $memberships = Wicket_Memberships::get_instance();
+            $memberships->create_table();
         }
         
         flush_rewrite_rules();
