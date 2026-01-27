@@ -68,6 +68,7 @@ class Wicket_Integration {
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/class-wicket-organizations.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/class-wicket-memberships.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/class-wicket-memberships-bricks.php';
+        require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/membership-history-modal.php';
 
 
         // Admin & Settings
