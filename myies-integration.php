@@ -67,6 +67,8 @@ class Wicket_Integration {
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/class-wicket-person-auto-create.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/class-wicket-organizations.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/class-wicket-memberships.php';
+        require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/class-wicket-memberships-bricks.php';
+
 
         // Admin & Settings
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/admin/class-wicket-settings-page.php';
@@ -74,6 +76,7 @@ class Wicket_Integration {
         
         // Frontend
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/shortcodes/class-person-details-shortcode.php';
+        require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/shortcodes/shortcode-membership-history.php';
 
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/frontend/class-wicket-sign-up.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/frontend/class-profile-edit-mode.php';
