@@ -38,7 +38,7 @@ function wicket_membership_register_assets() {
     // Register JS
     wp_register_script(
         'wicket-membership-history',
-        $plugin_url . 'assets/js/membership-history.js',
+        $plugin_url . 'assets/js/modal-membership-history.js',
         ['jquery'],
         $version,
         true
