@@ -109,6 +109,11 @@ class Wicket_Memberships_Bricks_Tags {
      * Render single tag
      */
     public function render_tag($tag, $post, $context) {
+        // Ensure $tag is a string
+        if (!is_string($tag)) {
+            return $tag;
+        }
+        
         if (strpos($tag, 'wicket_membership:') !== 0) {
             return $tag;
         }
@@ -121,14 +126,20 @@ class Wicket_Memberships_Bricks_Tags {
      * Render tags in content
      */
     public function render_content($content, $post, $context) {
+        // Ensure $content is a string
+        if (!is_string($content)) {
+            return $content;
+        }
+        
         if (strpos($content, '{wicket_membership:') === false) {
             return $content;
         }
         
+        $self = $this;
         return preg_replace_callback(
             '/\{wicket_membership:([a-z_]+)\}/',
-            function($matches) {
-                return $this->get_value($matches[1]);
+            function($matches) use ($self) {
+                return $self->get_value($matches[1]);
             },
             $content
         );
