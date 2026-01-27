@@ -589,6 +589,7 @@ class WicketBulkSync {
      * Sync individual user with Wicket
      */
     private function sync_user_with_wicket($user_id, $email, $tenant, $api_secret_key, $admin_user_uuid) {
+        
         if (!$this->wicket_sync) {
             return new WP_Error('no_sync_class', 'Wicket sync class not available');
         }
@@ -601,6 +602,18 @@ class WicketBulkSync {
             $wicket_uuid = get_user_meta($user_id, 'wicket_uuid', true);
             if (!empty($wicket_uuid)) {
                 $result = $this->wicket_sync->sync_wicket_person_to_acf($wicket_uuid, $user_id, $tenant, $api_secret_key, $admin_user_uuid);
+            }
+        }
+        
+        // Sync memberships if the memberships class is available
+        if (function_exists('wicket_memberships')) {
+            try {
+                $memberships_result = wicket_memberships()->sync_user_memberships($user_id);
+                if ($memberships_result !== false) {
+                    error_log("Wicket Bulk Sync: Memberships synced for user {$user_id} - Person: " . ($memberships_result['person_memberships'] ?? 0) . ", Org: " . ($memberships_result['org_memberships'] ?? 0));
+                }
+            } catch (Exception $e) {
+                error_log("Wicket Bulk Sync: Memberships sync failed for user {$user_id} - " . $e->getMessage());
             }
         }
         
