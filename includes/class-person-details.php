@@ -221,6 +221,7 @@ class WicketACFSync {
      * Handle AJAX request for syncing Wicket data
      */
     public function handle_sync_ajax_request() {
+
         // Add debug logging
         error_log('Wicket AJAX handler called');
         error_log('POST data: ' . print_r($_POST, true));
@@ -291,9 +292,29 @@ class WicketACFSync {
             update_user_meta($user_id, 'wicket_last_sync', current_time('mysql'));
             error_log('Sync successful for user: ' . $user_id);
             
+            // Sync memberships if available
+            $memberships_synced = 0;
+            if (function_exists('wicket_memberships')) {
+                try {
+                    $memberships_result = wicket_memberships()->sync_user_memberships($user_id);
+                    if ($memberships_result !== false) {
+                        $memberships_synced = ($memberships_result['person_memberships'] ?? 0) + ($memberships_result['org_memberships'] ?? 0);
+                        error_log("Wicket Sync: Memberships synced for user {$user_id} - Total: {$memberships_synced}");
+                    }
+                } catch (Exception $e) {
+                    error_log("Wicket Sync: Memberships sync failed for user {$user_id} - " . $e->getMessage());
+                }
+            }
+            
+            $message = $result['message'];
+            if ($memberships_synced > 0) {
+                $message .= " + {$memberships_synced} memberships";
+            }
+
             wp_send_json_success(array(
-                'message' => $result['message'],
-                'saved_fields' => $result['saved_fields']
+                'message' => $message,
+                'saved_fields' => $result['saved_fields'],
+                'memberships_synced' => $memberships_synced
             ));
         }
     }
