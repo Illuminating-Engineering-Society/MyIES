@@ -19,6 +19,8 @@
  *   {wicket_membership:has_any}
  *   {wicket_membership:person_count}
  *   {wicket_membership:org_count}
+ *   {wicket_membership:person_product_url}  (returns SureCart product URL for person's membership tier)
+ *   {wicket_membership:person_expires_soon}  (returns '1' if person's membership expires within 30 days)
  * 
  * @package MyIES_Integration
  * @since 1.0.4
@@ -104,7 +106,7 @@ class Wicket_Memberships_Bricks_Tags {
         
         // SureCart Product URL
         $tags[] = ['name' => '{wicket_membership:person_product_url}', 'label' => 'Person Membership: SureCart Product URL', 'group' => $group];
-
+        $tags[] = ['name' => '{wicket_membership:person_expires_soon}', 'label' => 'Person Membership: Expires Within 30 Days (1/empty)', 'group' => $group];
         return $tags;
     }
     
@@ -215,6 +217,17 @@ class Wicket_Memberships_Bricks_Tags {
                     return '#';
                 }
                 return $this->get_surecart_product_url($tier_name) ?: '#';
+
+            // Check if person membership expires within 30 days
+            case 'person_expires_soon':
+                if (!$person || empty($person['ends_at'])) {
+                    return '';
+                }
+                $ends_at = strtotime($person['ends_at']);
+                $now = current_time('timestamp');
+                $days_remaining = ($ends_at - $now) / DAY_IN_SECONDS;
+
+                return ($days_remaining <= 30 && $days_remaining >= 0) ? '1' : '';
                 
             default:
                 return '';
