@@ -227,7 +227,7 @@ class Wicket_Memberships_Bricks_Tags {
                 $now = current_time('timestamp');
                 $days_remaining = ($ends_at - $now) / DAY_IN_SECONDS;
 
-                return ($days_remaining <= 30 && $days_remaining >= 0) ? '1' : '';
+                return $days_remaining <= 30 ? '1' : '';
                 
             default:
                 return '';
