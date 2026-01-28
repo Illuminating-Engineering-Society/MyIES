@@ -102,6 +102,9 @@ class Wicket_Memberships_Bricks_Tags {
         $tags[] = ['name' => '{wicket_membership:person_count}', 'label' => 'Person Membership: Total Count', 'group' => $group];
         $tags[] = ['name' => '{wicket_membership:org_count}', 'label' => 'Org Membership: Total Count', 'group' => $group];
         
+        // SureCart Product URL
+        $tags[] = ['name' => '{wicket_membership:person_product_url}', 'label' => 'Person Membership: SureCart Product URL', 'group' => $group];
+
         return $tags;
     }
     
@@ -204,10 +207,56 @@ class Wicket_Memberships_Bricks_Tags {
                 return (string) count($data['person_memberships']);
             case 'org_count':
                 return (string) count($data['org_memberships']);
+
+            // SureCart Product URL
+            case 'person_product_url':
+                $tier_name = $person['membership_tier_name'] ?? '';
+                if (empty($tier_name)) {
+                    return '#';
+                }
+                return $this->get_surecart_product_url($tier_name) ?: '#';
                 
             default:
                 return '';
         }
+    }
+
+    /**
+     * Get SureCart product URL by membership tier name
+     * 
+     * @param string $membership_name Nombre del tier de membresía
+     * @return string|null URL del producto o null si no se encuentra
+     */
+    private function get_surecart_product_url($membership_name) {
+        if (empty($membership_name)) {
+            return null;
+        }
+        
+        // Buscar producto de SureCart por título exacto
+        $products = get_posts(array(
+            'post_type'      => 'sc_product',
+            'posts_per_page' => 1,
+            'post_status'    => 'publish',
+            'title'          => $membership_name,
+            'suppress_filters' => true,
+        ));
+        
+        // Si no encuentra por título exacto, intentar búsqueda flexible
+        if (empty($products)) {
+            $products = get_posts(array(
+                'post_type'      => 'sc_product',
+                'posts_per_page' => 1,
+                'post_status'    => 'publish',
+                's'              => $membership_name,
+                'suppress_filters' => true,
+            ));
+        }
+        
+        if (empty($products)) {
+            return null;
+        }
+        
+        return get_permalink($products[0]->ID);
     }
 }
 
