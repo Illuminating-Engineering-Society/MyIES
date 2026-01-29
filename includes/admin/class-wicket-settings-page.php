@@ -1,8 +1,8 @@
 <?php
 /**
- * Unified Wicket Settings Page with Tabs
+ * MyIES Controls Admin Menu
  *
- * Provides a single settings page with tabs for all Wicket integration configuration.
+ * Provides admin menu pages for all MyIES/Wicket integration configuration.
  *
  * @package MyIES_Integration
  * @since 1.0.0
@@ -13,23 +13,76 @@ if (!defined('ABSPATH')) {
 }
 
 /**
- * Add settings page to admin menu
+ * Add MyIES Controls menu to admin
  */
-function wicket_acf_sync_settings_page() {
-    add_options_page(
-        __('Wicket Integration Settings', 'wicket-integration'),
-        __('Wicket Integration', 'wicket-integration'),
+function myies_admin_menu() {
+    // Main menu page
+    add_menu_page(
+        __('MyIES Controls', 'wicket-integration'),
+        __('MyIES Controls', 'wicket-integration'),
         'manage_options',
-        'wicket-acf-sync',
-        'wicket_acf_sync_settings_callback'
+        'myies-controls',
+        'myies_api_settings_page',
+        'dashicons-admin-network',
+        58
+    );
+
+    // API Configuration submenu (also the default page)
+    add_submenu_page(
+        'myies-controls',
+        __('API Configuration', 'wicket-integration'),
+        __('API Configuration', 'wicket-integration'),
+        'manage_options',
+        'myies-controls',
+        'myies_api_settings_page'
+    );
+
+    // Sync Settings submenu
+    add_submenu_page(
+        'myies-controls',
+        __('Sync Settings', 'wicket-integration'),
+        __('Sync Settings', 'wicket-integration'),
+        'manage_options',
+        'myies-sync-settings',
+        'myies_sync_settings_page'
+    );
+
+    // Bulk Sync submenu
+    add_submenu_page(
+        'myies-controls',
+        __('Bulk Sync', 'wicket-integration'),
+        __('Bulk Sync', 'wicket-integration'),
+        'manage_options',
+        'myies-bulk-sync',
+        'myies_bulk_sync_page'
+    );
+
+    // SureCart Mapping submenu
+    add_submenu_page(
+        'myies-controls',
+        __('SureCart Mapping', 'wicket-integration'),
+        __('SureCart Mapping', 'wicket-integration'),
+        'manage_options',
+        'myies-surecart-mapping',
+        'myies_surecart_mapping_page'
+    );
+
+    // Updates submenu
+    add_submenu_page(
+        'myies-controls',
+        __('Updates', 'wicket-integration'),
+        __('Updates', 'wicket-integration'),
+        'manage_options',
+        'myies-updates',
+        'myies_updates_page'
     );
 }
-add_action('admin_menu', 'wicket_acf_sync_settings_page');
+add_action('admin_menu', 'myies_admin_menu');
 
 /**
- * Main settings page callback with tabbed interface
+ * API Configuration page callback
  */
-function wicket_acf_sync_settings_callback() {
+function myies_api_settings_page() {
     // Handle form submissions with nonce verification
     if (isset($_POST['wicket_settings_submit']) && current_user_can('manage_options')) {
         if (!isset($_POST['wicket_settings_nonce']) || !wp_verify_nonce($_POST['wicket_settings_nonce'], 'wicket_save_settings')) {
@@ -51,6 +104,22 @@ function wicket_acf_sync_settings_callback() {
         echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Settings saved!', 'wicket-integration') . '</p></div>';
     }
 
+    $tenant = get_option('wicket_tenant_name', '');
+    $api_secret = get_option('wicket_api_secret_key', '');
+    $admin_uuid = get_option('wicket_admin_user_uuid', '');
+    $staging = get_option('wicket_staging', 0);
+    ?>
+    <div class="wrap">
+        <h1><?php esc_html_e('API Configuration', 'wicket-integration'); ?></h1>
+        <?php wicket_render_api_settings_tab($tenant, $api_secret, $admin_uuid, $staging); ?>
+    </div>
+    <?php
+}
+
+/**
+ * Sync Settings page callback
+ */
+function myies_sync_settings_page() {
     // Handle sync settings form
     if (isset($_POST['wicket_sync_settings_submit']) && current_user_can('manage_options')) {
         if (!isset($_POST['wicket_sync_nonce']) || !wp_verify_nonce($_POST['wicket_sync_nonce'], 'wicket_save_sync_settings')) {
@@ -65,66 +134,59 @@ function wicket_acf_sync_settings_callback() {
 
         echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Sync settings saved!', 'wicket-integration') . '</p></div>';
     }
-
-    // Get current tab
-    $current_tab = isset($_GET['tab']) ? sanitize_key($_GET['tab']) : 'api';
-
-    // Get saved values
-    $tenant = get_option('wicket_tenant_name', '');
-    $api_secret = get_option('wicket_api_secret_key', '');
-    $admin_uuid = get_option('wicket_admin_user_uuid', '');
-    $staging = get_option('wicket_staging', 0);
     ?>
-
     <div class="wrap">
-        <h1><?php esc_html_e('Wicket Integration Settings', 'wicket-integration'); ?></h1>
-
-        <h2 class="nav-tab-wrapper">
-            <a href="<?php echo esc_url(admin_url('options-general.php?page=wicket-acf-sync&tab=api')); ?>"
-               class="nav-tab <?php echo $current_tab === 'api' ? 'nav-tab-active' : ''; ?>">
-                <?php esc_html_e('API Configuration', 'wicket-integration'); ?>
-            </a>
-            <a href="<?php echo esc_url(admin_url('options-general.php?page=wicket-acf-sync&tab=sync')); ?>"
-               class="nav-tab <?php echo $current_tab === 'sync' ? 'nav-tab-active' : ''; ?>">
-                <?php esc_html_e('Sync Settings', 'wicket-integration'); ?>
-            </a>
-            <a href="<?php echo esc_url(admin_url('options-general.php?page=wicket-acf-sync&tab=bulk')); ?>"
-               class="nav-tab <?php echo $current_tab === 'bulk' ? 'nav-tab-active' : ''; ?>">
-                <?php esc_html_e('Bulk Sync', 'wicket-integration'); ?>
-            </a>
-            <a href="<?php echo esc_url(admin_url('options-general.php?page=wicket-acf-sync&tab=updates')); ?>"
-               class="nav-tab <?php echo $current_tab === 'updates' ? 'nav-tab-active' : ''; ?>">
-                <?php esc_html_e('Updates', 'wicket-integration'); ?>
-            </a>
-            <a href="<?php echo esc_url(admin_url('options-general.php?page=wicket-acf-sync&tab=surecart')); ?>"
-               class="nav-tab <?php echo $current_tab === 'surecart' ? 'nav-tab-active' : ''; ?>">
-                <?php esc_html_e('SureCart Mapping', 'wicket-integration'); ?>
-            </a>
-        </h2>
-
-        <?php
-        switch ($current_tab) {
-            case 'sync':
-                wicket_render_sync_settings_tab();
-                break;
-            case 'bulk':
-                wicket_render_bulk_sync_tab();
-                break;
-            case 'updates':
-                wicket_render_updates_tab();
-                break;
-            case 'surecart':
-                wicket_render_surecart_mapping_tab();
-                break;
-            case 'api':
-            default:
-                wicket_render_api_settings_tab($tenant, $api_secret, $admin_uuid, $staging);
-                break;
-        }
-        ?>
+        <h1><?php esc_html_e('Sync Settings', 'wicket-integration'); ?></h1>
+        <?php wicket_render_sync_settings_tab(); ?>
     </div>
     <?php
 }
+
+/**
+ * Bulk Sync page callback
+ */
+function myies_bulk_sync_page() {
+    ?>
+    <div class="wrap">
+        <h1><?php esc_html_e('Bulk Sync', 'wicket-integration'); ?></h1>
+        <?php wicket_render_bulk_sync_tab(); ?>
+    </div>
+    <?php
+}
+
+/**
+ * SureCart Mapping page callback
+ */
+function myies_surecart_mapping_page() {
+    ?>
+    <div class="wrap">
+        <h1><?php esc_html_e('SureCart Mapping', 'wicket-integration'); ?></h1>
+        <?php wicket_render_surecart_mapping_tab(); ?>
+    </div>
+    <?php
+}
+
+/**
+ * Updates page callback
+ */
+function myies_updates_page() {
+    ?>
+    <div class="wrap">
+        <h1><?php esc_html_e('Updates', 'wicket-integration'); ?></h1>
+        <?php wicket_render_updates_tab(); ?>
+    </div>
+    <?php
+}
+
+/**
+ * Legacy callback for backwards compatibility
+ * Redirects old settings page to new location
+ */
+function wicket_acf_sync_settings_callback() {
+    wp_redirect(admin_url('admin.php?page=myies-controls'));
+    exit;
+}
+
 
 /**
  * Render API Configuration tab
