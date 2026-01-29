@@ -96,6 +96,10 @@ function wicket_acf_sync_settings_callback() {
                class="nav-tab <?php echo $current_tab === 'updates' ? 'nav-tab-active' : ''; ?>">
                 <?php esc_html_e('Updates', 'wicket-integration'); ?>
             </a>
+            <a href="<?php echo esc_url(admin_url('options-general.php?page=wicket-acf-sync&tab=surecart')); ?>"
+               class="nav-tab <?php echo $current_tab === 'surecart' ? 'nav-tab-active' : ''; ?>">
+                <?php esc_html_e('SureCart Mapping', 'wicket-integration'); ?>
+            </a>
         </h2>
 
         <?php
@@ -108,6 +112,9 @@ function wicket_acf_sync_settings_callback() {
                 break;
             case 'updates':
                 wicket_render_updates_tab();
+                break;
+            case 'surecart':
+                wicket_render_surecart_mapping_tab();
                 break;
             case 'api':
             default:
@@ -451,4 +458,186 @@ function wicket_render_fields_reference_table() {
         </tbody>
     </table>
     <?php
+}
+
+/**
+ * Render SureCart Mapping tab
+ */
+function wicket_render_surecart_mapping_tab() {
+    // Handle form submission
+    if (isset($_POST['wicket_save_surecart_mapping']) && current_user_can('manage_options')) {
+        if (!isset($_POST['wicket_surecart_nonce']) || !wp_verify_nonce($_POST['wicket_surecart_nonce'], 'wicket_save_surecart_mapping')) {
+            wp_die(__('Security check failed. Please try again.', 'wicket-integration'));
+        }
+
+        // Save sync enabled setting
+        update_option('wicket_surecart_sync_enabled', isset($_POST['wicket_surecart_sync_enabled']) ? 1 : 0);
+
+        // Save mapping
+        $mapping = [];
+        $product_ids = $_POST['surecart_product_id'] ?? [];
+        $membership_uuids = $_POST['wicket_membership_uuid'] ?? [];
+
+        foreach ($product_ids as $i => $product_id) {
+            $product_id = trim($product_id);
+            $uuid = trim($membership_uuids[$i] ?? '');
+
+            if ($product_id && $uuid) {
+                $mapping[sanitize_text_field($product_id)] = sanitize_text_field($uuid);
+            }
+        }
+
+        update_option('wicket_surecart_membership_mapping', $mapping);
+
+        echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('SureCart mapping saved!', 'wicket-integration') . '</p></div>';
+    }
+
+    $sync_enabled = get_option('wicket_surecart_sync_enabled', 1);
+    $mapping = get_option('wicket_surecart_membership_mapping', []);
+
+    // Get SureCart products
+    $surecart_products = [];
+    if (post_type_exists('sc_product')) {
+        $products = get_posts([
+            'post_type'      => 'sc_product',
+            'posts_per_page' => -1,
+            'post_status'    => 'publish',
+            'orderby'        => 'title',
+            'order'          => 'ASC',
+        ]);
+        foreach ($products as $product) {
+            // Try to get the SureCart product ID from meta
+            $sc_id = get_post_meta($product->ID, 'sc_id', true);
+            if (!$sc_id) {
+                $sc_id = $product->ID; // Fallback to WP post ID
+            }
+            $surecart_products[$sc_id] = $product->post_title;
+        }
+    }
+    ?>
+
+    <div class="card" style="max-width: 1000px; margin-top: 20px;">
+        <h2><?php esc_html_e('SureCart to Wicket Membership Sync', 'wicket-integration'); ?></h2>
+        <p><?php esc_html_e('Map your SureCart products to Wicket membership UUIDs. When a mapped product is purchased, the corresponding membership will be created or updated in Wicket.', 'wicket-integration'); ?></p>
+
+        <form method="post" action="">
+            <?php wp_nonce_field('wicket_save_surecart_mapping', 'wicket_surecart_nonce'); ?>
+
+            <table class="form-table">
+                <tr>
+                    <th scope="row"><?php esc_html_e('Enable Sync', 'wicket-integration'); ?></th>
+                    <td>
+                        <label>
+                            <input type="checkbox" name="wicket_surecart_sync_enabled" value="1" <?php checked($sync_enabled); ?>>
+                            <?php esc_html_e('Sync SureCart purchases to Wicket memberships', 'wicket-integration'); ?>
+                        </label>
+                        <p class="description"><?php esc_html_e('When enabled, membership purchases in SureCart will automatically create/update memberships in Wicket.', 'wicket-integration'); ?></p>
+                    </td>
+                </tr>
+            </table>
+
+            <h3><?php esc_html_e('Product to Membership Mapping', 'wicket-integration'); ?></h3>
+            <p class="description"><?php esc_html_e('Map SureCart products to Wicket membership tier UUIDs. You can find the Wicket membership UUIDs by clicking "Test Connection & Show Memberships" on the API Configuration tab.', 'wicket-integration'); ?></p>
+
+            <table class="widefat" id="wicket-surecart-mapping-table" style="max-width: 900px; margin-top: 15px;">
+                <thead>
+                    <tr>
+                        <th width="40%"><?php esc_html_e('SureCart Product', 'wicket-integration'); ?></th>
+                        <th width="50%"><?php esc_html_e('Wicket Membership UUID', 'wicket-integration'); ?></th>
+                        <th width="10%"></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php
+                    if (empty($mapping)) {
+                        $mapping = ['' => ''];
+                    }
+
+                    foreach ($mapping as $product_id => $uuid):
+                    ?>
+                    <tr>
+                        <td>
+                            <?php if (!empty($surecart_products)): ?>
+                            <select name="surecart_product_id[]" class="regular-text" style="width: 100%;">
+                                <option value=""><?php esc_html_e('-- Select Product --', 'wicket-integration'); ?></option>
+                                <?php foreach ($surecart_products as $sc_id => $title): ?>
+                                <option value="<?php echo esc_attr($sc_id); ?>" <?php selected($product_id, $sc_id); ?>>
+                                    <?php echo esc_html($title); ?> (<?php echo esc_html($sc_id); ?>)
+                                </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <?php else: ?>
+                            <input type="text" name="surecart_product_id[]" value="<?php echo esc_attr($product_id); ?>" class="regular-text" placeholder="<?php esc_attr_e('SureCart Product ID', 'wicket-integration'); ?>">
+                            <p class="description"><?php esc_html_e('Enter the SureCart product ID (found in SureCart dashboard)', 'wicket-integration'); ?></p>
+                            <?php endif; ?>
+                        </td>
+                        <td>
+                            <input type="text" name="wicket_membership_uuid[]" value="<?php echo esc_attr($uuid); ?>" class="regular-text" style="width: 100%;" placeholder="<?php esc_attr_e('e.g., 550e8400-e29b-41d4-a716-446655440000', 'wicket-integration'); ?>">
+                        </td>
+                        <td>
+                            <button type="button" class="button wicket-remove-mapping-row">&times;</button>
+                        </td>
+                    </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+
+            <p style="margin-top: 10px;">
+                <button type="button" class="button" id="wicket-add-mapping-row">+ <?php esc_html_e('Add Mapping', 'wicket-integration'); ?></button>
+            </p>
+
+            <?php submit_button(__('Save SureCart Mapping', 'wicket-integration'), 'primary', 'wicket_save_surecart_mapping'); ?>
+        </form>
+    </div>
+
+    <?php wicket_render_surecart_credentials_status(); ?>
+
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+        var table = document.getElementById('wicket-surecart-mapping-table');
+        if (!table) return;
+
+        document.getElementById('wicket-add-mapping-row').addEventListener('click', function() {
+            var row = table.querySelector('tbody tr').cloneNode(true);
+            row.querySelectorAll('input, select').forEach(function(input) {
+                input.value = '';
+            });
+            table.querySelector('tbody').appendChild(row);
+        });
+
+        table.addEventListener('click', function(e) {
+            if (!e.target.classList.contains('wicket-remove-mapping-row')) return;
+
+            var rows = table.querySelectorAll('tbody tr');
+            if (rows.length > 1) {
+                e.target.closest('tr').remove();
+            }
+        });
+    });
+    </script>
+
+    <?php
+}
+
+/**
+ * Render credentials status for SureCart tab
+ */
+function wicket_render_surecart_credentials_status() {
+    if (!class_exists('Wicket_Credentials')) {
+        echo '<div class="notice notice-warning" style="max-width: 1000px;"><p>' . esc_html__('SureCart sync module not loaded. Please check that the class-surecart-wicket-sync.php file is included.', 'wicket-integration') . '</p></div>';
+        return;
+    }
+
+    $creds = new Wicket_Credentials();
+
+    if ($creds->is_configured()) {
+        echo '<div class="notice notice-success" style="max-width: 1000px;"><p><strong>' . esc_html__('Status:', 'wicket-integration') . '</strong> ' . esc_html__('Wicket credentials configured. Ready to sync.', 'wicket-integration') . '</p></div>';
+    } else {
+        echo '<div class="notice notice-warning" style="max-width: 1000px;"><p><strong>' . esc_html__('Status:', 'wicket-integration') . '</strong> ' . esc_html__('Wicket credentials incomplete. Please configure API settings on the "API Configuration" tab.', 'wicket-integration') . '</p></div>';
+    }
+
+    // Check if SureCart is active
+    if (!class_exists('\SureCart\Models\Purchase')) {
+        echo '<div class="notice notice-warning" style="max-width: 1000px;"><p><strong>' . esc_html__('Warning:', 'wicket-integration') . '</strong> ' . esc_html__('SureCart plugin not detected. Please install and activate SureCart for the sync to work.', 'wicket-integration') . '</p></div>';
+    }
 }
