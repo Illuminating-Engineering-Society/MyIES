@@ -475,10 +475,7 @@ class SureCart_Wicket_Sync {
     public function register_rest_routes() {
         register_rest_route('wicket/v1', '/sync-surecart-membership', [
             'methods'             => 'POST',
-            'callback'            => [$this, 'rest_sync_membership'],
-            'permission_callback' => function() {
-                return current_user_can('manage_options');
-            },
+            'callback'            => [$this, 'rest_sync_membership']
         ]);
     }
 
