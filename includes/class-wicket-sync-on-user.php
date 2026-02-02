@@ -664,20 +664,64 @@ class WicketLoginSync {
             return null;
         }
         
-        $org_data = json_decode($org_response, true);
-        $org_attrs = $org_data['data']['attributes'] ?? array();
+        // STRICT FILTER: Loop through connections to find one with org_type = "company"
+        $found_connection = null;
+        $found_org_uuid = null;
+        $found_org_attrs = null;
+        
+        foreach ($connections as $conn) {
+            $candidate_org_uuid = $conn['relationships']['to']['data']['id'] ?? 
+                                $conn['relationships']['organization']['data']['id'] ?? null;
+            
+            if (empty($candidate_org_uuid)) {
+                continue;
+            }
+            
+            // Fetch organization details to check type
+            $org_url = $base_url . "/organizations/{$candidate_org_uuid}";
+            $org_response = $this->make_api_request($org_url, $jwt_token);
+            
+            if (is_wp_error($org_response)) {
+                error_log("Wicket Sync: Failed to get org details for {$candidate_org_uuid}");
+                continue;
+            }
+            
+            $org_data = json_decode($org_response, true);
+            $candidate_org_attrs = $org_data['data']['attributes'] ?? array();
+            $org_type = strtolower(trim($candidate_org_attrs['type'] ?? ''));
+            
+            // STRICT: Only accept type "company"
+            if ($org_type === 'company') {
+                $found_connection = $conn;
+                $found_org_uuid = $candidate_org_uuid;
+                $found_org_attrs = $candidate_org_attrs;
+                error_log("Wicket Sync: Found company: {$found_org_uuid} - " . ($found_org_attrs['legal_name'] ?? 'unknown'));
+                break;
+            } else {
+                error_log("Wicket Sync: Skipping org {$candidate_org_uuid} - type is '{$org_type}', not 'company'");
+            }
+        }
+        
+        // If no company found, clear meta and return
+        if (empty($found_connection) || empty($found_org_uuid)) {
+            error_log("Wicket Sync: No organization of type 'company' found for person {$person_uuid}");
+            $this->clear_org_meta($user_id);
+            return array('saved_fields' => array());
+        }
+        
+        $connection_uuid = $found_connection['id'] ?? null;
+        $connection_type = $found_connection['attributes']['type'] ?? 'member';
         
         // Save organization data to user meta
         $saved_fields = array();
         
-        // Organization fields mapping
         $org_field_mapping = array(
-            'wicket_org_uuid' => $org_uuid,
-            'wicket_org_name' => $org_attrs['legal_name'] ?? '',
-            'wicket_org_type' => $org_attrs['type'] ?? '',
-            'wicket_org_alternate_name' => $org_attrs['alternate_name'] ?? '',
-            'wicket_org_description' => $org_attrs['description'] ?? '',
-            'wicket_org_slug' => $org_attrs['slug'] ?? '',
+            'wicket_org_uuid' => $found_org_uuid,
+            'wicket_org_name' => $found_org_attrs['legal_name'] ?? '',
+            'wicket_org_type' => $found_org_attrs['type'] ?? '',
+            'wicket_org_alternate_name' => $found_org_attrs['alternate_name'] ?? '',
+            'wicket_org_description' => $found_org_attrs['description'] ?? '',
+            'wicket_org_slug' => $found_org_attrs['slug'] ?? '',
             'wicket_connection_uuid' => $connection_uuid,
             'wicket_connection_type' => $connection_type,
         );
@@ -691,16 +735,16 @@ class WicketLoginSync {
             }
         }
         
-        // Also update the legacy primary_org_uuid for backwards compatibility
-        update_user_meta($user_id, 'wicket_primary_org_uuid', $org_uuid);
+        // Also update the primary_org_uuid for backwards compatibility
+        update_user_meta($user_id, 'wicket_primary_org_uuid', $found_org_uuid);
         $saved_fields[] = 'wicket_primary_org_uuid';
         
-        error_log("Wicket Sync: Saved organization '" . ($org_attrs['legal_name'] ?? 'unknown') . "' to user meta");
+        error_log("Wicket Sync: Saved company '" . ($found_org_attrs['legal_name'] ?? 'unknown') . "' to user meta");
         
         return array(
             'saved_fields' => $saved_fields,
-            'org_uuid' => $org_uuid,
-            'org_name' => $org_attrs['legal_name'] ?? ''
+            'org_uuid' => $found_org_uuid,
+            'org_name' => $found_org_attrs['legal_name'] ?? ''
         );
     }
     

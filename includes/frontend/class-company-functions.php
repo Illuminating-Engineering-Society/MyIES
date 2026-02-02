@@ -199,7 +199,14 @@ class Wicket_Company_Functions {
                     );
                 }
             }
-            
+
+            $org_type = strtolower($org['org_type'] ?? '');
+
+            if ($org_type !== 'company') {
+                continue;
+            }
+    
+
             if ($org) {
                 $companies[] = array(
                     'connection_uuid' => $conn['id'],

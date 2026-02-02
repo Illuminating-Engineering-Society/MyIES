@@ -412,9 +412,13 @@ class Wicket_Organizations {
         return $wpdb->get_results($wpdb->prepare(
             "SELECT wicket_uuid, legal_name, alternate_name, org_type 
              FROM {$this->table_name} 
-             WHERE legal_name LIKE %s 
-                OR alternate_name LIKE %s 
-                OR legal_name_en LIKE %s
+             WHERE 
+                org_type = 'company' AND 
+                (
+                    legal_name LIKE %s 
+                    OR alternate_name LIKE %s 
+                    OR legal_name_en LIKE %s
+                )
              ORDER BY legal_name ASC 
              LIMIT %d",
             $search, $search, $search, $limit
