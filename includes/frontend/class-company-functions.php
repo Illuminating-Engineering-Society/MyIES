@@ -172,6 +172,14 @@ class Wicket_Company_Functions {
         $primary_org_uuid = get_user_meta($user_id, 'wicket_primary_org_uuid', true);
         
         foreach ($connections as $conn) {
+
+            // FILTER: Only process active connections
+            $conn_active = $conn['attributes']['active'] ?? null;
+            if ($conn_active === false) {
+                error_log('[WICKET COMPANY] Skipping inactive connection: ' . ($conn['id'] ?? 'unknown'));
+                continue;
+            }
+
             // Try different relationship structures (Wicket API can return different formats)
             $org_uuid = $conn['relationships']['to']['data']['id'] ?? 
                         $conn['relationships']['organization']['data']['id'] ?? null;
@@ -205,7 +213,7 @@ class Wicket_Company_Functions {
             if ($org_type !== 'company') {
                 continue;
             }
-    
+
 
             if ($org) {
                 $companies[] = array(

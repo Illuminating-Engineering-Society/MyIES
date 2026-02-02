@@ -639,37 +639,20 @@ class WicketLoginSync {
         
         error_log("Wicket Sync: Found " . count($connections) . " organization connections");
         
-        // Get the first (primary) connection
-        $connection = $connections[0];
-        $connection_uuid = $connection['id'] ?? null;
-        $connection_type = $connection['attributes']['type'] ?? 'member';
-        
-        // Get organization UUID from the connection
-        $org_uuid = $connection['relationships']['to']['data']['id'] ?? 
-                   $connection['relationships']['organization']['data']['id'] ?? null;
-        
-        if (empty($org_uuid)) {
-            error_log("Wicket Sync: Connection found but no organization UUID");
-            return null;
-        }
-        
-        error_log("Wicket Sync: Primary org UUID: {$org_uuid}");
-        
-        // Fetch organization details
-        $org_url = $base_url . "/organizations/{$org_uuid}";
-        $org_response = $this->make_api_request($org_url, $jwt_token);
-        
-        if (is_wp_error($org_response)) {
-            error_log("Wicket Sync: Failed to get organization details: " . $org_response->get_error_message());
-            return null;
-        }
-        
         // STRICT FILTER: Loop through connections to find one with org_type = "company"
         $found_connection = null;
         $found_org_uuid = null;
         $found_org_attrs = null;
         
         foreach ($connections as $conn) {
+
+            // FILTER: Only process active connections
+            $conn_active = $conn['attributes']['active'] ?? null;
+            if ($conn_active === false) {
+                error_log("Wicket Sync: Skipping inactive connection: " . ($conn['id'] ?? 'unknown'));
+                continue;
+            }
+            
             $candidate_org_uuid = $conn['relationships']['to']['data']['id'] ?? 
                                 $conn['relationships']['organization']['data']['id'] ?? null;
             

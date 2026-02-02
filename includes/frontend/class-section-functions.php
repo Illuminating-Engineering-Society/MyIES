@@ -155,6 +155,14 @@ class Wicket_Section_Functions {
         $primary_section_uuid = get_user_meta($user_id, 'wicket_section_uuid', true);
 
         foreach ($connections as $conn) {
+
+            // FILTER: Only process active connections
+            $conn_active = $conn['attributes']['active'] ?? null;
+            if ($conn_active === false) {
+                myies_log('Skipping inactive connection: ' . ($conn['id'] ?? 'unknown'), 'Section Functions');
+                continue;
+            }
+
             $org_uuid = $conn['relationships']['to']['data']['id'] ??
                         $conn['relationships']['organization']['data']['id'] ?? null;
 
