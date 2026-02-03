@@ -532,19 +532,13 @@ class WicketLoginSync {
         }
         
         // =====================================================
-        // NEW: Sync PRIMARY ORGANIZATION from connections
+        // Sync PRIMARY COMPANY and SECTION from connections
         // =====================================================
         $person_uuid = $attributes['uuid'] ?? null;
         if ($person_uuid) {
-            $org_data = $this->sync_user_organization($user_id, $person_uuid);
-            if ($org_data && isset($org_data['saved_fields'])) {
-                $saved_fields = array_merge($saved_fields, $org_data['saved_fields']);
-            }
-            
-            // Sync PRIMARY SECTION from connections
-            $section_data = $this->sync_user_section($user_id, $person_uuid);
-            if ($section_data && isset($section_data['saved_fields'])) {
-                $saved_fields = array_merge($saved_fields, $section_data['saved_fields']);
+            $org_section_data = $this->sync_user_company_and_section($user_id, $person_uuid);
+            if ($org_section_data && isset($org_section_data['saved_fields'])) {
+                $saved_fields = array_merge($saved_fields, $org_section_data['saved_fields']);
             }
         }
         
@@ -580,158 +574,246 @@ class WicketLoginSync {
     }
     
     /**
-     * Sync user's primary organization from Wicket connections
-     * 
-     * This fetches the user's connections and saves the primary organization
-     * to user meta, similar to how address and phone are synced.
-     * 
-     * Meta keys saved:
-     * - wicket_org_uuid: Organization UUID
-     * - wicket_org_name: Organization legal name
-     * - wicket_org_type: Organization type
-     * - wicket_org_alternate_name: Organization alternate name
-     * - wicket_connection_uuid: Connection UUID
-     * - wicket_connection_type: Connection type (member, etc.)
-     * 
+     * Sync user's primary company AND section from Wicket connections in a single API call
+     *
+     * This fetches the user's connections ONCE and identifies both:
+     * - Organization with type="company"
+     * - Organization with type="section"
+     *
+     * Organization details are extracted from the 'included' array in the API response,
+     * avoiding separate API calls for each organization.
+     *
+     * Only active connections are processed (based on starts_at/ends_at dates).
+     *
+     * @param int $user_id WordPress user ID
+     * @param string $person_uuid Wicket person UUID
+     * @return array|null Result with saved fields or null on failure
+     */
+    private function sync_user_company_and_section($user_id, $person_uuid) {
+        if (empty($person_uuid)) {
+            return null;
+        }
+
+        $config = $this->get_wicket_config();
+        if (!$config['valid']) {
+            error_log("[Wicket Sync] Configuration invalid - " . ($config['error'] ?? 'unknown'));
+            return null;
+        }
+
+        error_log("[Wicket Sync] Syncing company and section for person {$person_uuid}");
+
+        $jwt_token = $this->generate_jwt_token($config);
+        if (is_wp_error($jwt_token)) {
+            error_log("[Wicket Sync] Failed to generate JWT");
+            return null;
+        }
+
+        $base_url = $config['is_staging']
+            ? "https://{$config['tenant']}-api.staging.wicketcloud.com"
+            : "https://{$config['tenant']}-api.wicketcloud.com";
+
+        // Single API call - connections endpoint includes organization data
+        $api_url = $base_url . "/people/{$person_uuid}/connections?filter[connection_type_eq]=person_to_organization";
+        $response = $this->make_api_request($api_url, $jwt_token);
+
+        if (is_wp_error($response)) {
+            error_log("[Wicket Sync] Failed to get connections: " . $response->get_error_message());
+            return null;
+        }
+
+        $data = json_decode($response, true);
+        $connections = $data['data'] ?? array();
+        $included = $data['included'] ?? array();
+
+        if (empty($connections)) {
+            error_log("[Wicket Sync] No connections found for person {$person_uuid}");
+            $this->clear_org_meta($user_id);
+            $this->clear_section_meta($user_id);
+            return array('saved_fields' => array());
+        }
+
+        error_log("[Wicket Sync] Found " . count($connections) . " connections");
+
+        // Build a lookup map of organizations from the included array
+        $org_lookup = array();
+        foreach ($included as $item) {
+            if (($item['type'] ?? '') === 'organizations') {
+                $org_lookup[$item['id']] = $item['attributes'] ?? array();
+            }
+        }
+
+        error_log("[Wicket Sync] Found " . count($org_lookup) . " organizations in included data");
+
+        // Track what we find
+        $found_company = null;
+        $found_company_conn = null;
+        $found_section = null;
+        $found_section_conn = null;
+
+        // Single loop through all connections - no additional API calls needed
+        foreach ($connections as $conn) {
+            // Skip inactive connections (based on starts_at/ends_at dates)
+            if (!$this->is_connection_active($conn)) {
+                error_log("[Wicket Sync] Skipping inactive connection: " . ($conn['id'] ?? 'unknown'));
+                continue;
+            }
+
+            // Already found both? Stop early
+            if ($found_company && $found_section) {
+                break;
+            }
+
+            $org_uuid = $conn['relationships']['to']['data']['id'] ??
+                        $conn['relationships']['organization']['data']['id'] ?? null;
+
+            if (empty($org_uuid)) {
+                continue;
+            }
+
+            // Get organization details from included data (no API call)
+            if (!isset($org_lookup[$org_uuid])) {
+                error_log("[Wicket Sync] Organization {$org_uuid} not found in included data");
+                continue;
+            }
+
+            $org_attrs = $org_lookup[$org_uuid];
+            $org_type = strtolower(trim($org_attrs['type'] ?? ''));
+
+            // Check for company
+            if (!$found_company && $org_type === 'company') {
+                $found_company = array('uuid' => $org_uuid, 'attrs' => $org_attrs);
+                $found_company_conn = $conn;
+                error_log("[Wicket Sync] Found company: {$org_uuid} - " . ($org_attrs['legal_name'] ?? 'unknown'));
+            }
+
+            // Check for section
+            if (!$found_section && $org_type === 'section') {
+                $found_section = array('uuid' => $org_uuid, 'attrs' => $org_attrs);
+                $found_section_conn = $conn;
+                error_log("[Wicket Sync] Found section: {$org_uuid} - " . ($org_attrs['legal_name'] ?? 'unknown'));
+            }
+        }
+
+        $saved_fields = array();
+
+        // Save company data
+        if ($found_company) {
+            $company_fields = $this->save_company_meta($user_id, $found_company, $found_company_conn);
+            $saved_fields = array_merge($saved_fields, $company_fields);
+        } else {
+            error_log("[Wicket Sync] No active company connection found for person {$person_uuid}");
+            $this->clear_org_meta($user_id);
+        }
+
+        // Save section data
+        if ($found_section) {
+            $section_fields = $this->save_section_meta($user_id, $found_section, $found_section_conn);
+            $saved_fields = array_merge($saved_fields, $section_fields);
+        } else {
+            error_log("[Wicket Sync] No active section connection found for person {$person_uuid}");
+            $this->clear_section_meta($user_id);
+        }
+
+        return array(
+            'saved_fields' => $saved_fields,
+            'company' => $found_company,
+            'section' => $found_section
+        );
+    }
+
+    /**
+     * Save company meta to user
+     */
+    private function save_company_meta($user_id, $company_data, $connection) {
+        $saved_fields = array();
+        $org_uuid = $company_data['uuid'];
+        $org_attrs = $company_data['attrs'];
+        $connection_uuid = $connection['id'] ?? null;
+        $connection_type = $connection['attributes']['type'] ?? 'member';
+
+        $field_mapping = array(
+            'wicket_org_uuid' => $org_uuid,
+            'wicket_org_name' => $org_attrs['legal_name'] ?? '',
+            'wicket_org_type' => $org_attrs['type'] ?? '',
+            'wicket_org_alternate_name' => $org_attrs['alternate_name'] ?? '',
+            'wicket_org_description' => $org_attrs['description'] ?? '',
+            'wicket_org_slug' => $org_attrs['slug'] ?? '',
+            'wicket_connection_uuid' => $connection_uuid,
+            'wicket_connection_type' => $connection_type,
+        );
+
+        foreach ($field_mapping as $meta_key => $value) {
+            if ($value !== null && $value !== '') {
+                $sanitized_value = is_string($value) ? sanitize_text_field($value) : $value;
+                update_user_meta($user_id, $meta_key, $sanitized_value);
+                $saved_fields[] = $meta_key;
+            }
+        }
+
+        update_user_meta($user_id, 'wicket_primary_org_uuid', $org_uuid);
+        $saved_fields[] = 'wicket_primary_org_uuid';
+
+        error_log("[Wicket Sync] Saved company '" . ($org_attrs['legal_name'] ?? 'unknown') . "' to user meta");
+
+        return $saved_fields;
+    }
+
+    /**
+     * Save section meta to user
+     */
+    private function save_section_meta($user_id, $section_data, $connection) {
+        $saved_fields = array();
+        $section_uuid = $section_data['uuid'];
+        $section_attrs = $section_data['attrs'];
+        $connection_uuid = $connection['id'] ?? null;
+        $connection_type = $connection['attributes']['type'] ?? 'member';
+
+        $field_mapping = array(
+            'wicket_section_uuid' => $section_uuid,
+            'wicket_section_name' => $section_attrs['legal_name'] ?? '',
+            'wicket_section_alternate_name' => $section_attrs['alternate_name'] ?? '',
+            'wicket_section_description' => $section_attrs['description'] ?? '',
+            'wicket_section_slug' => $section_attrs['slug'] ?? '',
+            'wicket_section_connection_uuid' => $connection_uuid,
+            'wicket_section_connection_type' => $connection_type,
+        );
+
+        foreach ($field_mapping as $meta_key => $value) {
+            if ($value !== null && $value !== '') {
+                $sanitized_value = is_string($value) ? sanitize_text_field($value) : $value;
+                update_user_meta($user_id, $meta_key, $sanitized_value);
+                $saved_fields[] = $meta_key;
+            }
+        }
+
+        update_user_meta($user_id, 'wicket_primary_section_uuid', $section_uuid);
+        $saved_fields[] = 'wicket_primary_section_uuid';
+
+        error_log("[Wicket Sync] Saved section '" . ($section_attrs['legal_name'] ?? 'unknown') . "' to user meta");
+
+        return $saved_fields;
+    }
+
+    /**
+     * Legacy wrapper: Sync user's primary organization (company) from Wicket connections
+     *
+     * @deprecated Use sync_user_company_and_section() for better efficiency
      * @param int $user_id WordPress user ID
      * @param string $person_uuid Wicket person UUID
      * @return array|null Result with saved fields or null on failure
      */
     private function sync_user_organization($user_id, $person_uuid) {
-        if (empty($person_uuid)) {
+        $result = $this->sync_user_company_and_section($user_id, $person_uuid);
+        if (!$result) {
             return null;
         }
-        
-        // Get Wicket configuration
-        $config = $this->get_wicket_config();
-        if (!$config['valid']) {
-            error_log("Wicket Sync Org: Configuration invalid - " . ($config['error'] ?? 'unknown'));
-            return null;
-        }
-        
-        error_log("Wicket Sync: Syncing organization for person {$person_uuid}");
-        
-        // Generate JWT token
-        $jwt_token = $this->generate_jwt_token($config);
-        if (is_wp_error($jwt_token)) {
-            error_log("Wicket Sync: Failed to generate JWT for org sync");
-            return null;
-        }
-        
-        // Build API URL for connections
-        $base_url = $config['is_staging'] 
-            ? "https://{$config['tenant']}-api.staging.wicketcloud.com"
-            : "https://{$config['tenant']}-api.wicketcloud.com";
-            
-        $api_url = $base_url . "/people/{$person_uuid}/connections?filter[connection_type_eq]=person_to_organization";
-        
-        // Make API request
-        $response = $this->make_api_request($api_url, $jwt_token);
-        if (is_wp_error($response)) {
-            error_log("Wicket Sync: Failed to get connections: " . $response->get_error_message());
-            return null;
-        }
-        
-        // Parse response
-        $data = json_decode($response, true);
-        $connections = $data['data'] ?? array();
-        
-        if (empty($connections)) {
-            error_log("Wicket Sync: No organization connections found for person {$person_uuid}");
-            // Clear existing org meta if no connections
-            $this->clear_org_meta($user_id);
-            return array('saved_fields' => array());
-        }
-        
-        error_log("Wicket Sync: Found " . count($connections) . " organization connections");
 
-        // Loop through connections to find one with org_type = "company"
-        $found_connection = null;
-        $found_org_uuid = null;
-        $found_org_attrs = null;
-
-        foreach ($connections as $conn) {
-            // FILTER: Only process active connections (based on starts_at/ends_at dates)
-            if (!$this->is_connection_active($conn)) {
-                error_log("Wicket Sync: Skipping inactive connection: " . ($conn['id'] ?? 'unknown'));
-                continue;
-            }
-
-            $candidate_org_uuid = $conn['relationships']['to']['data']['id'] ?? 
-                                $conn['relationships']['organization']['data']['id'] ?? null;
-            
-            if (empty($candidate_org_uuid)) {
-                continue;
-            }
-            
-            // Fetch organization details to check type
-            $org_url = $base_url . "/organizations/{$candidate_org_uuid}";
-            $org_response = $this->make_api_request($org_url, $jwt_token);
-            
-            if (is_wp_error($org_response)) {
-                error_log("Wicket Sync: Failed to get org details for {$candidate_org_uuid}");
-                continue;
-            }
-            
-            $org_data = json_decode($org_response, true);
-            $candidate_org_attrs = $org_data['data']['attributes'] ?? array();
-            $org_type = strtolower(trim($candidate_org_attrs['type'] ?? ''));
-            
-            // STRICT: Only accept type "company"
-            if ($org_type === 'company') {
-                $found_connection = $conn;
-                $found_org_uuid = $candidate_org_uuid;
-                $found_org_attrs = $candidate_org_attrs;
-                error_log("Wicket Sync: Found company: {$found_org_uuid} - " . ($found_org_attrs['legal_name'] ?? 'unknown'));
-                break;
-            } else {
-                error_log("Wicket Sync: Skipping org {$candidate_org_uuid} - type is '{$org_type}', not 'company'");
-            }
-        }
-        
-        // If no company found, clear meta and return
-        if (empty($found_connection) || empty($found_org_uuid)) {
-            error_log("Wicket Sync: No organization of type 'company' found for person {$person_uuid}");
-            $this->clear_org_meta($user_id);
-            return array('saved_fields' => array());
-        }
-        
-        $connection_uuid = $found_connection['id'] ?? null;
-        $connection_type = $found_connection['attributes']['type'] ?? 'member';
-        
-        // Save organization data to user meta
-        $saved_fields = array();
-        
-        $org_field_mapping = array(
-            'wicket_org_uuid' => $found_org_uuid,
-            'wicket_org_name' => $found_org_attrs['legal_name'] ?? '',
-            'wicket_org_type' => $found_org_attrs['type'] ?? '',
-            'wicket_org_alternate_name' => $found_org_attrs['alternate_name'] ?? '',
-            'wicket_org_description' => $found_org_attrs['description'] ?? '',
-            'wicket_org_slug' => $found_org_attrs['slug'] ?? '',
-            'wicket_connection_uuid' => $connection_uuid,
-            'wicket_connection_type' => $connection_type,
-        );
-        
-        foreach ($org_field_mapping as $meta_key => $value) {
-            if ($value !== null && $value !== '') {
-                $sanitized_value = is_string($value) ? sanitize_text_field($value) : $value;
-                update_user_meta($user_id, $meta_key, $sanitized_value);
-                $saved_fields[] = $meta_key;
-                error_log("Wicket Sync: Saved {$meta_key} = {$sanitized_value}");
-            }
-        }
-        
-        // Also update the primary_org_uuid for backwards compatibility
-        update_user_meta($user_id, 'wicket_primary_org_uuid', $found_org_uuid);
-        $saved_fields[] = 'wicket_primary_org_uuid';
-        
-        error_log("Wicket Sync: Saved company '" . ($found_org_attrs['legal_name'] ?? 'unknown') . "' to user meta");
-        
         return array(
-            'saved_fields' => $saved_fields,
-            'org_uuid' => $found_org_uuid,
-            'org_name' => $found_org_attrs['legal_name'] ?? ''
+            'saved_fields' => array_filter($result['saved_fields'], function($field) {
+                return strpos($field, 'wicket_org') === 0 || $field === 'wicket_connection_uuid' || $field === 'wicket_connection_type' || $field === 'wicket_primary_org_uuid';
+            }),
+            'org_uuid' => $result['company']['uuid'] ?? null,
+            'org_name' => $result['company']['attrs']['legal_name'] ?? ''
         );
     }
     
@@ -795,143 +877,25 @@ class WicketLoginSync {
     }
 
     /**
-     * Sync user's primary section from Wicket connections
-     * 
-     * Sections are organizations with type="section".
-     * Uses the same connections endpoint as org sync.
-     * 
-     * Meta keys saved:
-     * - wicket_section_uuid
-     * - wicket_section_name
-     * - wicket_section_alternate_name
-     * - wicket_section_description
-     * - wicket_section_slug
-     * - wicket_section_connection_uuid
-     * - wicket_section_connection_type
-     * - wicket_primary_section_uuid
-     * 
+     * Legacy wrapper: Sync user's primary section from Wicket connections
+     *
+     * @deprecated Use sync_user_company_and_section() for better efficiency
      * @param int $user_id WordPress user ID
      * @param string $person_uuid Wicket person UUID
      * @return array|null Result with saved fields or null on failure
      */
     private function sync_user_section($user_id, $person_uuid) {
-        if (empty($person_uuid)) {
+        $result = $this->sync_user_company_and_section($user_id, $person_uuid);
+        if (!$result) {
             return null;
         }
-        
-        $config = $this->get_wicket_config();
-        if (!$config['valid']) {
-            error_log("[WICKET SECTION] Configuration invalid - " . ($config['error'] ?? 'unknown'));
-            return null;
-        }
-        
-        error_log("[WICKET SECTION] Syncing section for person {$person_uuid}");
-        
-        $jwt_token = $this->generate_jwt_token($config);
-        if (is_wp_error($jwt_token)) {
-            error_log("[WICKET SECTION] Failed to generate JWT for section sync");
-            return null;
-        }
-        
-        $base_url = $config['is_staging'] 
-            ? "https://{$config['tenant']}-api.staging.wicketcloud.com"
-            : "https://{$config['tenant']}-api.wicketcloud.com";
-            
-        $api_url = $base_url . "/people/{$person_uuid}/connections?filter[connection_type_eq]=person_to_organization";
-        
-        $response = $this->make_api_request($api_url, $jwt_token);
-        if (is_wp_error($response)) {
-            error_log("[WICKET SECTION] Failed to get connections: " . $response->get_error_message());
-            return null;
-        }
-        
-        $data = json_decode($response, true);
-        $connections = $data['data'] ?? array();
-        
-        if (empty($connections)) {
-            error_log("[WICKET SECTION] No connections found for person {$person_uuid}");
-            $this->clear_section_meta($user_id);
-            return array('saved_fields' => array());
-        }
-        
-        // Loop through connections to find one with org type "section"
-        $found_connection = null;
-        $found_org_uuid = null;
-        $found_org_attrs = null;
 
-        foreach ($connections as $conn) {
-            // FILTER: Only process active connections (based on starts_at/ends_at dates)
-            if (!$this->is_connection_active($conn)) {
-                error_log("[WICKET SECTION] Skipping inactive connection: " . ($conn['id'] ?? 'unknown'));
-                continue;
-            }
-            
-            $candidate_org_uuid = $conn['relationships']['to']['data']['id'] ?? 
-                                $conn['relationships']['organization']['data']['id'] ?? null;
-            
-            if (empty($candidate_org_uuid)) {
-                continue;
-            }
-            
-            $org_url = $base_url . "/organizations/{$candidate_org_uuid}";
-            $org_response = $this->make_api_request($org_url, $jwt_token);
-            
-            if (is_wp_error($org_response)) {
-                continue;
-            }
-            
-            $org_data = json_decode($org_response, true);
-            $candidate_org_attrs = $org_data['data']['attributes'] ?? array();
-            $org_type = strtolower(trim($candidate_org_attrs['type'] ?? ''));
-            
-            if ($org_type === 'section') {
-                $found_connection = $conn;
-                $found_org_uuid = $candidate_org_uuid;
-                $found_org_attrs = $candidate_org_attrs;
-                error_log("[WICKET SECTION] Found section: {$found_org_uuid} - " . ($found_org_attrs['legal_name'] ?? 'unknown'));
-                break;
-            }
-        }
-        
-        if (empty($found_connection) || empty($found_org_uuid)) {
-            error_log("[WICKET SECTION] No organization of type 'section' found for person {$person_uuid}");
-            $this->clear_section_meta($user_id);
-            return array('saved_fields' => array());
-        }
-        
-        $connection_uuid = $found_connection['id'] ?? null;
-        $connection_type = $found_connection['attributes']['type'] ?? 'member';
-        
-        $saved_fields = array();
-        
-        $section_field_mapping = array(
-            'wicket_section_uuid' => $found_org_uuid,
-            'wicket_section_name' => $found_org_attrs['legal_name'] ?? '',
-            'wicket_section_alternate_name' => $found_org_attrs['alternate_name'] ?? '',
-            'wicket_section_description' => $found_org_attrs['description'] ?? '',
-            'wicket_section_slug' => $found_org_attrs['slug'] ?? '',
-            'wicket_section_connection_uuid' => $connection_uuid,
-            'wicket_section_connection_type' => $connection_type,
-        );
-        
-        foreach ($section_field_mapping as $meta_key => $value) {
-            if ($value !== null && $value !== '') {
-                $sanitized_value = is_string($value) ? sanitize_text_field($value) : $value;
-                update_user_meta($user_id, $meta_key, $sanitized_value);
-                $saved_fields[] = $meta_key;
-                error_log("[WICKET SECTION] Saved {$meta_key} = {$sanitized_value}");
-            }
-        }
-        
-        update_user_meta($user_id, 'wicket_primary_section_uuid', $found_org_uuid);
-        $saved_fields[] = 'wicket_primary_section_uuid';
-        
-        error_log("[WICKET SECTION] Saved section '" . ($found_org_attrs['legal_name'] ?? 'unknown') . "' to user meta");
-        
         return array(
-            'saved_fields' => $saved_fields,
-            'section_uuid' => $found_org_uuid,
-            'section_name' => $found_org_attrs['legal_name'] ?? ''
+            'saved_fields' => array_filter($result['saved_fields'], function($field) {
+                return strpos($field, 'wicket_section') === 0 || $field === 'wicket_primary_section_uuid';
+            }),
+            'section_uuid' => $result['section']['uuid'] ?? null,
+            'section_name' => $result['section']['attrs']['legal_name'] ?? ''
         );
     }
     
