@@ -288,8 +288,33 @@ class WicketACFSync {
             error_log('Final sync result failed: ' . $result->get_error_message());
             wp_send_json_error(array('message' => $result->get_error_message()));
         } else {
+
             // Update last sync timestamp
             update_user_meta($user_id, 'wicket_last_sync', current_time('mysql'));
+            
+            // Sync organization and section via WicketLoginSync if available
+            $person_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+
+            if (!empty($person_uuid) && isset($GLOBALS['wicket_login_sync_instance'])) {
+                $login_sync = $GLOBALS['wicket_login_sync_instance'];
+                
+                // Sync company
+                if (method_exists($login_sync, 'sync_user_organization_public')) {
+                    $org_result = $login_sync->sync_user_organization_public($user_id, $person_uuid);
+                    if ($org_result && isset($org_result['saved_fields'])) {
+                        $result['saved_fields'] = array_merge($result['saved_fields'], $org_result['saved_fields']);
+                    }
+                }
+                
+                // Sync section
+                if (method_exists($login_sync, 'sync_user_section_public')) {
+                    $section_result = $login_sync->sync_user_section_public($user_id, $person_uuid);
+                    if ($section_result && isset($section_result['saved_fields'])) {
+                        $result['saved_fields'] = array_merge($result['saved_fields'], $section_result['saved_fields']);
+                    }
+                }
+            }
+            
             error_log('Sync successful for user: ' . $user_id);
             
             // Sync memberships if available
