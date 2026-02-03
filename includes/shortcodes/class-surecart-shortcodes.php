@@ -5,8 +5,9 @@
  * Provides shortcodes for displaying SureCart order history and product information.
  *
  * Usage:
- *   [surecart_orders_history] - Display order history for logged-in user
- *   [surecart_products_info]  - Display purchased products (excluding memberships/subscriptions)
+ *   [surecart_orders_history]  - Display order history for logged-in user
+ *   [surecart_products_info]   - Display purchased products (excluding memberships/subscriptions)
+ *   [surecart_membership_info] - Display active membership information with management buttons
  *
  * @package MyIES_Integration
  * @since 1.0.5
@@ -65,6 +66,13 @@ class MyIES_SureCart_Shortcodes {
 	private function __construct() {
 		add_shortcode( 'surecart_orders_history', array( $this, 'render_orders_history' ) );
 		add_shortcode( 'surecart_products_info', array( $this, 'render_products_info' ) );
+		add_shortcode( 'surecart_membership_info', array( $this, 'render_membership_info' ) );
+
+		// Enqueue SureCart components in footer for membership shortcode.
+		add_action( 'wp_footer', array( $this, 'enqueue_surecart_assets' ), 1 );
+
+		// Change SureCart cancel button text.
+		add_action( 'wp_enqueue_scripts', array( $this, 'change_surecart_cancel_text' ), 999 );
 	}
 
 	/**
@@ -464,6 +472,293 @@ class MyIES_SureCart_Shortcodes {
 
 			return '<p>' . esc_html__( 'Unable to load products. Please try again later.', 'wicket-integration' ) . '</p>';
 		}
+	}
+
+	/**
+	 * Shortcode: [surecart_membership_info]
+	 *
+	 * Displays the logged-in user's active SureCart membership information.
+	 *
+	 * Features:
+	 * - Retrieves active subscriptions for membership products
+	 * - Shows membership grade, status, and expiration
+	 * - Differentiates between one-time and subscription memberships
+	 * - Includes SureCart management buttons (renew/cancel/update)
+	 * - Always shows the "Individual Membership" header even when no membership exists
+	 *
+	 * @since 1.0.6
+	 * @param array $atts Shortcode attributes (unused).
+	 * @return string HTML markup containing the membership info.
+	 */
+	public function render_membership_info( $atts ) {
+		if ( ! is_user_logged_in() ) {
+			return '<p>' . esc_html__( 'You must be logged in to view your membership.', 'wicket-integration' ) . '</p>';
+		}
+
+		if ( ! class_exists( '\SureCart\Models\Customer' ) ) {
+			return '<p>' . esc_html__( 'SureCart plugin is required.', 'wicket-integration' ) . '</p>';
+		}
+
+		try {
+			$current_user = wp_get_current_user();
+
+			if ( empty( $current_user->user_email ) ) {
+				return '<p>' . esc_html__( 'Invalid user email.', 'wicket-integration' ) . '</p>';
+			}
+
+			$customer = \SureCart\Models\Customer::where(
+				array(
+					'email' => $current_user->user_email,
+				)
+			)->first();
+
+			if ( ! $customer || ! isset( $customer->id ) ) {
+				return '<p>' . esc_html__( 'Customer not found.', 'wicket-integration' ) . '</p>';
+			}
+
+			// Membership product IDs (same as excluded_product_ids).
+			$membership_product_ids = $this->excluded_product_ids;
+
+			// Fetch active subscriptions for this customer.
+			$subscriptions = \SureCart\Models\Subscription::where(
+				array(
+					'customer_ids' => array( $customer->id ),
+					'status'       => array( 'active', 'trialing' ),
+					'expand'       => array( 'price', 'price.product', 'current_period' ),
+				)
+			)->get();
+
+			// Also fetch completed orders for one-time memberships.
+			$orders = \SureCart\Models\Order::where(
+				array(
+					'customer_ids' => array( $customer->id ),
+					'status'       => array( 'paid', 'processing', 'completed' ),
+					'expand'       => array( 'checkout', 'checkout.line_items' ),
+				)
+			)->get();
+
+			// Find active membership.
+			$active_membership = null;
+			$is_subscription   = false;
+			$subscription_id   = null;
+
+			// Check subscriptions first.
+			if ( ! empty( $subscriptions ) && is_array( $subscriptions ) ) {
+				foreach ( $subscriptions as $subscription ) {
+					if ( isset( $subscription->price->product->id ) &&
+						in_array( $subscription->price->product->id, $membership_product_ids, true ) ) {
+						$active_membership = $subscription;
+						$is_subscription   = true;
+						$subscription_id   = $subscription->id;
+						break;
+					}
+				}
+			}
+
+			// If no subscription found, check one-time purchases.
+			if ( ! $active_membership && ! empty( $orders ) && is_array( $orders ) ) {
+				foreach ( $orders as $order ) {
+					if ( isset( $order->checkout->line_items->data ) && is_array( $order->checkout->line_items->data ) ) {
+						foreach ( $order->checkout->line_items->data as $item ) {
+							if ( ! empty( $item->price ) && is_string( $item->price ) ) {
+								try {
+									$price = \SureCart\Models\Price::with( array( 'product' ) )->find( $item->price );
+
+									if ( isset( $price->product->id ) &&
+										in_array( $price->product->id, $membership_product_ids, true ) ) {
+										$active_membership = $order;
+										$is_subscription   = false;
+										break 2;
+									}
+								} catch ( \Exception $e ) {
+									continue;
+								}
+							}
+						}
+					}
+				}
+			}
+
+			// Get membership details.
+			$membership_grade = __( 'Individual Membership', 'wicket-integration' );
+			$has_membership   = ! empty( $active_membership );
+
+			if ( $has_membership ) {
+				// Get product name if available.
+				if ( $is_subscription && isset( $active_membership->price->product->name ) ) {
+					$membership_grade = $active_membership->price->product->name;
+				} elseif ( ! $is_subscription ) {
+					// Extract product name from order.
+					if ( isset( $active_membership->checkout->line_items->data ) &&
+						is_array( $active_membership->checkout->line_items->data ) ) {
+						foreach ( $active_membership->checkout->line_items->data as $item ) {
+							if ( ! empty( $item->price ) && is_string( $item->price ) ) {
+								try {
+									$price = \SureCart\Models\Price::with( array( 'product' ) )->find( $item->price );
+									if ( isset( $price->product->id ) &&
+										in_array( $price->product->id, $membership_product_ids, true ) ) {
+										$membership_grade = $price->product->name ?? $membership_grade;
+										break;
+									}
+								} catch ( \Exception $e ) {
+									continue;
+								}
+							}
+						}
+					}
+				}
+			}
+
+			ob_start();
+			?>
+			<div class="brxe-block membership-info">
+				<div class="brxe-block func-head-viewall">
+					<h3 class="brxe-heading current-section">
+						<?php esc_html_e( 'Individual Membership', 'wicket-integration' ); ?>
+					</h3>
+				</div>
+
+				<div class="brxe-block dash-func-container">
+					<?php if ( ! $has_membership ) : ?>
+						<!-- No membership message -->
+						<div class="brxe-block grid-subs">
+							<div class="brxe-block ins-grid-desc">
+								<div class="brxe-text-basic subs-desc">
+									<?php esc_html_e( 'No active membership found.', 'wicket-integration' ); ?>
+								</div>
+							</div>
+						</div>
+					<?php else : ?>
+						<div class="brxe-block grid-subs">
+
+							<!-- Member Grade & Status -->
+							<div class="brxe-block ins-grid-desc">
+								<div class="brxe-block subs-stat">
+									<h3 class="brxe-heading inside-func">
+										<?php echo esc_html( $membership_grade ); ?>
+									</h3>
+								</div>
+								<div class="brxe-text-basic subs-desc">
+									Illuminating Engineering Society
+								</div>
+							</div>
+
+							<!-- Management Buttons -->
+							<div class="brxe-block ins-grid-desc">
+								<div class="brxe-block subs-stat">
+									<?php if ( $is_subscription && $subscription_id ) : ?>
+										<?php
+										try {
+											$subscription = \SureCart\Models\Subscription::with(
+												array(
+													'price',
+													'price.product',
+													'current_period',
+													'current_cancellation_act',
+												)
+											)->find( $subscription_id );
+
+											if ( ! $subscription ) {
+												echo '<p>' . esc_html__( 'Subscription not found', 'wicket-integration' ) . '</p>';
+											} else {
+												$has_cancellation = $subscription->cancel_at_period_end;
+												if ( $has_cancellation ) {
+													echo wp_kses_post(
+														\SureCart\Models\Component::tag( 'sc-subscription-details' )
+															->id( 'customer-subscription-details-' . esc_attr( $subscription_id ) )
+															->with(
+																array(
+																	'subscription' => $subscription,
+																	'backUrl'      => esc_url_raw( home_url( '/my-account/' ) ),
+																	'successUrl'   => esc_url_raw( home_url( '/my-account/' ) ),
+																)
+															)
+															->render()
+													);
+												} else {
+													$protocol = \SureCart\Models\SubscriptionProtocol::with( array( 'preservation_coupon' ) )->find();
+													echo wp_kses_post(
+														\SureCart\Models\Component::tag( 'sc-subscription-cancel' )
+															->id( 'customer-subscription-cancel-' . esc_attr( $subscription_id ) )
+															->with(
+																array(
+																	'subscription' => $subscription,
+																	'protocol'     => $protocol,
+																	'backUrl'      => esc_url_raw( home_url( '/my-account/' ) ),
+																	'successUrl'   => esc_url_raw( home_url( '/my-account/' ) ),
+																	'cancel-text'  => __( 'Cancel Subscription', 'wicket-integration' ),
+																)
+															)
+															->render()
+													);
+												}
+											}
+										} catch ( \Exception $e ) {
+											echo '<p>' . esc_html__( 'Error loading subscription details.', 'wicket-integration' ) . '</p>';
+										}
+										?>
+										<script>
+											document.addEventListener('DOMContentLoaded', function() {
+												document.querySelectorAll('sc-subscription-cancel').forEach(function(el) {
+													el.addEventListener('scCancelled', function(e) {
+														window.location.reload();
+													});
+												});
+											});
+										</script>
+									<?php else : ?>
+										<a class="brxe-button change-org-btn bricks-button bricks-background-primary"
+										   href="<?php echo esc_url( home_url( '/membership-renewal/' ) ); ?>">
+											<?php esc_html_e( 'Renew', 'wicket-integration' ); ?>
+										</a>
+									<?php endif; ?>
+								</div>
+							</div>
+						</div>
+					<?php endif; ?>
+				</div>
+			</div>
+			<?php
+
+			return ob_get_clean();
+
+		} catch ( \Exception $e ) {
+			if ( function_exists( 'myies_log' ) ) {
+				myies_log( 'SureCart Membership Error: ' . $e->getMessage(), 'surecart-shortcodes' );
+			}
+
+			return '<p>' . esc_html__( 'Unable to load membership information. Please try again later.', 'wicket-integration' ) . '</p>';
+		}
+	}
+
+	/**
+	 * Enqueue SureCart component assets.
+	 *
+	 * Required for the subscription management components to work properly.
+	 *
+	 * @since 1.0.6
+	 * @return void
+	 */
+	public function enqueue_surecart_assets() {
+		if ( class_exists( '\SureCart' ) && method_exists( \SureCart::class, 'assets' ) ) {
+			\SureCart::assets()->enqueueComponents();
+		}
+	}
+
+	/**
+	 * Change SureCart cancel button text.
+	 *
+	 * Updates the "Cancel Plan" text to "Cancel Your Auto-Renewal" for clarity.
+	 *
+	 * @since 1.0.6
+	 * @return void
+	 */
+	public function change_surecart_cancel_text() {
+		wp_add_inline_script(
+			'surecart-components',
+			'wp.i18n.setLocaleData({ "Cancel Plan": ["Cancel Your Auto-Renewal"] }, "surecart");',
+			'after'
+		);
 	}
 }
 
