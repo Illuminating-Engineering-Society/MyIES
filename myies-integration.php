@@ -79,6 +79,7 @@ class Wicket_Integration {
         // Frontend
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/shortcodes/class-person-details-shortcode.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/shortcodes/shortcode-membership-history.php';
+        require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/shortcodes/class-surecart-shortcodes.php';
 
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/frontend/class-wicket-sign-up.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/frontend/class-profile-edit-mode.php';
