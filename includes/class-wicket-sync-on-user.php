@@ -645,41 +645,14 @@ class WicketLoginSync {
         
         error_log("Wicket Sync: Found " . count($connections) . " organization connections");
 
-        // Get the first (primary) connection
-        $connection = $connections[0];
-        $connection_uuid = $connection['id'] ?? null;
-        $connection_type = $connection['attributes']['type'] ?? 'member';
-        
-        // Get organization UUID from the connection
-        $org_uuid = $connection['relationships']['to']['data']['id'] ?? 
-                   $connection['relationships']['organization']['data']['id'] ?? null;
-        
-        if (empty($org_uuid)) {
-            error_log("Wicket Sync: Connection found but no organization UUID");
-            return null;
-        }
-        
-        error_log("Wicket Sync: Primary org UUID: {$org_uuid}");
-        
-        // Fetch organization details
-        $org_url = $base_url . "/organizations/{$org_uuid}";
-        $org_response = $this->make_api_request($org_url, $jwt_token);
-        
-        if (is_wp_error($org_response)) {
-            error_log("Wicket Sync: Failed to get organization details: " . $org_response->get_error_message());
-            return null;
-        }
-        
-        // STRICT FILTER: Loop through connections to find one with org_type = "company"
+        // Loop through connections to find one with org_type = "company"
         $found_connection = null;
         $found_org_uuid = null;
         $found_org_attrs = null;
-        
-        foreach ($connections as $conn) {
 
-            // FILTER: Only process active connections
-            $conn_active = $conn['attributes']['active'] ?? null;
-            if ($conn_active === false) {
+        foreach ($connections as $conn) {
+            // FILTER: Only process active connections (based on starts_at/ends_at dates)
+            if (!$this->is_connection_active($conn)) {
                 error_log("Wicket Sync: Skipping inactive connection: " . ($conn['id'] ?? 'unknown'));
                 continue;
             }
@@ -763,8 +736,44 @@ class WicketLoginSync {
     }
     
     /**
+     * Check if a connection is active based on starts_at and ends_at dates
+     *
+     * A connection is active when the current UTC time falls between starts_at and ends_at.
+     * If starts_at is null, the connection is considered to have started.
+     * If ends_at is null, the connection is considered open-ended (no end date).
+     *
+     * @param array $connection Connection data from API
+     * @return bool True if connection is active
+     */
+    private function is_connection_active($connection) {
+        $attributes = $connection['attributes'] ?? array();
+        $starts_at = $attributes['starts_at'] ?? null;
+        $ends_at = $attributes['ends_at'] ?? null;
+
+        $now = time();
+
+        // Check starts_at: if set, current time must be >= starts_at
+        if (!empty($starts_at)) {
+            $start_time = strtotime($starts_at);
+            if ($start_time && $now < $start_time) {
+                return false; // Connection hasn't started yet
+            }
+        }
+
+        // Check ends_at: if set, current time must be < ends_at
+        if (!empty($ends_at)) {
+            $end_time = strtotime($ends_at);
+            if ($end_time && $now >= $end_time) {
+                return false; // Connection has ended
+            }
+        }
+
+        return true;
+    }
+
+    /**
      * Clear organization meta for a user
-     * 
+     *
      * @param int $user_id WordPress user ID
      */
     private function clear_org_meta($user_id) {
@@ -849,10 +858,11 @@ class WicketLoginSync {
         $found_connection = null;
         $found_org_uuid = null;
         $found_org_attrs = null;
-        
+
         foreach ($connections as $conn) {
-            $conn_active = $conn['attributes']['active'] ?? null;
-            if ($conn_active === false) {
+            // FILTER: Only process active connections (based on starts_at/ends_at dates)
+            if (!$this->is_connection_active($conn)) {
+                error_log("[WICKET SECTION] Skipping inactive connection: " . ($conn['id'] ?? 'unknown'));
                 continue;
             }
             
