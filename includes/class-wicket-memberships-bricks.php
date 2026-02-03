@@ -180,7 +180,8 @@ class Wicket_Memberships_Bricks_Tags {
             case 'org_name':
                 return $org['organization_name'] ?? '';
             case 'org_tier_name':
-                return $org['membership_tier_name'] ?? '';
+                $tier_name = $org['membership_tier_name'] ?? '';
+                return wicket_get_display_membership_name($tier_name, 'organization');
             case 'org_status':
                 return $org['status'] ?? '';
             case 'org_status_class':

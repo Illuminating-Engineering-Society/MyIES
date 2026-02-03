@@ -581,6 +581,55 @@ function wicket_sync_user_memberships($user_id) {
     return wicket_memberships()->sync_user_memberships($user_id);
 }
 
+/**
+ * Get display name for sustaining/organizational membership tier
+ *
+ * Maps Wicket tier names to frontend display names:
+ * - Contributor → Bronze
+ * - Supporter → Silver
+ * - Benefactor → Gold
+ * - Ambassador → Platinum
+ * - Champion → Diamond
+ *
+ * @param string $wicket_name The membership tier name from Wicket
+ * @param string $membership_type Optional. 'person' or 'organization'. Default 'organization'.
+ * @return string The display name for the frontend
+ */
+function wicket_get_display_membership_name($wicket_name, $membership_type = 'organization') {
+    if (empty($wicket_name)) {
+        return $wicket_name;
+    }
+
+    // Default mapping for sustaining (organizational) memberships
+    $sustaining_name_map = array(
+        'Contributor' => 'Bronze',
+        'Supporter'   => 'Silver',
+        'Benefactor'  => 'Gold',
+        'Ambassador'  => 'Platinum',
+        'Champion'    => 'Diamond',
+    );
+
+    /**
+     * Filter the sustaining membership name mapping
+     *
+     * @param array  $sustaining_name_map Array of Wicket name => Display name mappings
+     * @param string $membership_type     Either 'person' or 'organization'
+     */
+    $sustaining_name_map = apply_filters('myies_sustaining_membership_name_map', $sustaining_name_map, $membership_type);
+
+    // Check if the Wicket name exists in the mapping
+    $display_name = isset($sustaining_name_map[$wicket_name]) ? $sustaining_name_map[$wicket_name] : $wicket_name;
+
+    /**
+     * Filter the final display name for a membership tier
+     *
+     * @param string $display_name    The mapped display name
+     * @param string $wicket_name     The original name from Wicket
+     * @param string $membership_type Either 'person' or 'organization'
+     */
+    return apply_filters('myies_membership_display_name', $display_name, $wicket_name, $membership_type);
+}
+
 add_action('plugins_loaded', function() {
     wicket_memberships();
 }, 15);

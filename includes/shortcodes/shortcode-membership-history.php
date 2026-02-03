@@ -124,7 +124,7 @@ class Wicket_Membership_History_Shortcode {
                     <td>
                         <strong><?php echo esc_html($m['organization_name']); ?></strong>
                     </td>
-                    <td><?php echo esc_html($m['membership_tier_name']); ?></td>
+                    <td><?php echo esc_html(wicket_get_display_membership_name($m['membership_tier_name'], 'organization')); ?></td>
                     <td>
                         <span class="wicket-status-badge wicket-status-badge--<?php echo esc_attr(strtolower($m['status'])); ?>">
                             <span class="wicket-status-badge__dot"></span>
