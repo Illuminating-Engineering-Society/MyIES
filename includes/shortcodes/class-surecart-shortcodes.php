@@ -538,18 +538,20 @@ class MyIES_SureCart_Shortcodes {
 			)->get();
 
 			// Find active membership.
-			$active_membership = null;
-			$is_subscription   = false;
-			$subscription_id   = null;
+			$active_membership     = null;
+			$is_subscription       = false;
+			$subscription_id       = null;
+			$membership_product_id = null;
 
 			// Check subscriptions first.
 			if ( ! empty( $subscriptions ) && is_array( $subscriptions ) ) {
 				foreach ( $subscriptions as $subscription ) {
 					if ( isset( $subscription->price->product->id ) &&
 						in_array( $subscription->price->product->id, $membership_product_ids, true ) ) {
-						$active_membership = $subscription;
-						$is_subscription   = true;
-						$subscription_id   = $subscription->id;
+						$active_membership     = $subscription;
+						$is_subscription       = true;
+						$subscription_id       = $subscription->id;
+						$membership_product_id = $subscription->price->product->id;
 						break;
 					}
 				}
@@ -566,8 +568,9 @@ class MyIES_SureCart_Shortcodes {
 
 									if ( isset( $price->product->id ) &&
 										in_array( $price->product->id, $membership_product_ids, true ) ) {
-										$active_membership = $order;
-										$is_subscription   = false;
+										$active_membership     = $order;
+										$is_subscription       = false;
+										$membership_product_id = $price->product->id;
 										break 2;
 									}
 								} catch ( \Exception $e ) {
@@ -608,6 +611,26 @@ class MyIES_SureCart_Shortcodes {
 					}
 				}
 			}
+
+			// Build renew URL from SureCart product page.
+			$renew_url = home_url( '/membership-renewal/' );
+			if ( $has_membership && ! empty( $membership_product_id ) ) {
+				$product_posts = get_posts(
+					array(
+						'post_type'        => 'sc_product',
+						'posts_per_page'   => 1,
+						'post_status'      => 'publish',
+						'meta_key'         => 'sc_id',
+						'meta_value'       => $membership_product_id,
+						'suppress_filters' => true,
+					)
+				);
+
+				if ( ! empty( $product_posts ) ) {
+					$renew_url = get_permalink( $product_posts[0]->ID );
+				}
+			}
+			$renew_url = apply_filters( 'myies_surecart_membership_renew_url', $renew_url, $membership_product_id );
 
 			ob_start();
 			?>
@@ -708,7 +731,7 @@ class MyIES_SureCart_Shortcodes {
 										</script>
 									<?php else : ?>
 										<a class="brxe-button change-org-btn bricks-button bricks-background-primary"
-										   href="<?php echo esc_url( home_url( '/membership-renewal/' ) ); ?>">
+										   href="<?php echo esc_url( $renew_url ); ?>">
 											<?php esc_html_e( 'Renew', 'wicket-integration' ); ?>
 										</a>
 									<?php endif; ?>
