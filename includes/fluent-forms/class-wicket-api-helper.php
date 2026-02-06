@@ -31,6 +31,15 @@ if (!defined('MYIES_FORM_ADDRESS')) {
 if (!defined('MYIES_FORM_CONTACT_DETAILS')) {
     define('MYIES_FORM_CONTACT_DETAILS', 23);
 }
+if (!defined('MYIES_FORM_ADDITIONAL_INFO_EDUCATION')) {
+    define('MYIES_FORM_ADDITIONAL_INFO_EDUCATION', 24);
+}
+if (!defined('MYIES_FORM_ORGANIZATION_INFO')) {
+    define('MYIES_FORM_ORGANIZATION_INFO', 26);
+}
+if (!defined('MYIES_FORM_COMMUNICATION_PREFS')) {
+    define('MYIES_FORM_COMMUNICATION_PREFS', 27);
+}
 
 /**
  * Debug logging helper function
@@ -50,60 +59,124 @@ class Wicket_API_Helper {
 
     private static $instance = null;
     private $person_uuid_cache = array();
-    
+    private $cached_jwt_token = null;
+    private $jwt_token_expiry = 0;
+
     public static function get_instance() {
         if (self::$instance === null) {
             self::$instance = new self();
         }
         return self::$instance;
     }
-    
+
     private function __construct() {}
-    
+    private function __clone() {}
+    public function __wakeup() {
+        throw new \Exception('Cannot unserialize singleton');
+    }
+
     /**
      * Get Wicket API base URL
      */
     public function get_api_url() {
-        $tenant = get_option('wicket_tenant_name', '');
-        $staging = get_option('wicket_staging', 0);
-        
+        $tenant = (string) get_option('wicket_tenant_name', '');
+        $staging = (bool) get_option('wicket_staging', 0);
+
+        // Validate tenant name format to prevent SSRF
+        if (!preg_match('/^[a-z0-9][a-z0-9-]*[a-z0-9]$/i', $tenant)) {
+            myies_log('Invalid tenant name format: ' . $tenant, 'Wicket API Helper');
+            return '';
+        }
+
         if ($staging) {
             return "https://{$tenant}-api.staging.wicketcloud.com";
         }
-        
+
         return "https://{$tenant}-api.wicketcloud.com";
     }
-    
+
     /**
      * Generate JWT token for Wicket API authentication
+     * Caches token and reuses until 5 minutes before expiry
      */
     public function generate_jwt_token() {
-        $tenant = get_option('wicket_tenant_name', '');
-        $api_secret = get_option('wicket_api_secret_key', '');
-        $admin_uuid = get_option('wicket_admin_user_uuid', '');
-        
+        // Return cached token if still valid (with 5-minute buffer)
+        if ($this->cached_jwt_token && (time() + 300) < $this->jwt_token_expiry) {
+            return $this->cached_jwt_token;
+        }
+
+        $tenant = (string) get_option('wicket_tenant_name', '');
+        $api_secret = (string) get_option('wicket_api_secret_key', '');
+        $admin_uuid = (string) get_option('wicket_admin_user_uuid', '');
+
         if (empty($tenant) || empty($api_secret) || empty($admin_uuid)) {
-            error_log('[Wicket API Helper] Missing API configuration');
+            myies_log('Missing API configuration', 'Wicket API Helper');
             return new WP_Error('missing_credentials', 'Wicket API credentials not configured');
         }
-        
+
         $api_url = $this->get_api_url();
-        
+        if (empty($api_url)) {
+            return new WP_Error('invalid_config', 'Invalid tenant name configuration');
+        }
+
+        $expiry = time() + 3600;
+
         $header = json_encode(['typ' => 'JWT', 'alg' => 'HS256']);
         $payload = json_encode([
-            'exp' => time() + 3600,
+            'exp' => $expiry,
             'sub' => $admin_uuid,
             'aud' => $api_url,
             'iss' => get_site_url()
         ]);
-        
+
+        if ($header === false || $payload === false) {
+            return new WP_Error('json_error', 'Failed to encode JWT payload');
+        }
+
         $base64Header = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($header));
         $base64Payload = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($payload));
-        
+
         $signature = hash_hmac('sha256', $base64Header . "." . $base64Payload, $api_secret, true);
         $base64Signature = str_replace(['+', '/', '='], ['-', '_', ''], base64_encode($signature));
-        
-        return $base64Header . "." . $base64Payload . "." . $base64Signature;
+
+        $this->cached_jwt_token = $base64Header . "." . $base64Payload . "." . $base64Signature;
+        $this->jwt_token_expiry = $expiry;
+
+        return $this->cached_jwt_token;
+    }
+
+    /**
+     * Safely decode JSON, returning null on failure
+     */
+    private function safe_json_decode($json_string) {
+        if (empty($json_string)) {
+            return null;
+        }
+        $decoded = json_decode($json_string, true);
+        if (json_last_error() !== JSON_ERROR_NONE) {
+            myies_log('JSON decode error: ' . json_last_error_msg(), 'Wicket API Helper');
+            return null;
+        }
+        return $decoded;
+    }
+
+    /**
+     * Safely encode JSON, returning false on failure
+     */
+    private function safe_json_encode($data) {
+        $encoded = json_encode($data);
+        if ($encoded === false) {
+            myies_log('JSON encode error: ' . json_last_error_msg(), 'Wicket API Helper');
+            return false;
+        }
+        return $encoded;
+    }
+
+    /**
+     * Get API request timeout (filterable)
+     */
+    private function get_timeout($default = 30) {
+        return (int) apply_filters('wicket_api_timeout', $default);
     }
     
     /**
@@ -131,7 +204,7 @@ class Wicket_API_Helper {
         if (empty($person_uuid)) {
             $user = get_userdata($user_id);
             if ($user && !empty($user->user_email)) {
-                error_log('[Wicket API Helper] UUID not in meta, searching by email: ' . $user->user_email);
+                myies_log('UUID not in meta for user ' . $user_id . ', searching by email', 'Wicket API Helper');
                 $person_uuid = $this->find_person_by_email($user->user_email);
                 
                 if (!empty($person_uuid)) {
@@ -172,15 +245,15 @@ class Wicket_API_Helper {
         }
         
         $status_code = wp_remote_retrieve_response_code($response);
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        
-        if ($status_code === 200 && !empty($body['data'][0]['id'])) {
+        $body = $this->safe_json_decode(wp_remote_retrieve_body($response));
+
+        if ($status_code === 200 && is_array($body) && !empty($body['data'][0]['id'])) {
             return $body['data'][0]['id'];
         }
-        
+
         return null;
     }
-    
+
     /**
      * Update person attributes in Wicket API
      */
@@ -188,14 +261,14 @@ class Wicket_API_Helper {
         if (empty($person_uuid) || empty($attributes)) {
             return array('success' => false, 'message' => 'Missing person_uuid or attributes');
         }
-        
+
         $token = $this->generate_jwt_token();
         if (is_wp_error($token)) {
             return array('success' => false, 'message' => $token->get_error_message());
         }
-        
+
         $api_url = $this->get_api_url() . '/people/' . $person_uuid;
-        
+
         $request_body = array(
             'data' => array(
                 'type' => 'people',
@@ -203,10 +276,14 @@ class Wicket_API_Helper {
                 'attributes' => $attributes
             )
         );
-        
-        error_log('[Wicket API Helper] Updating person: ' . $person_uuid);
-        error_log('[Wicket API Helper] Request: ' . json_encode($request_body, JSON_PRETTY_PRINT));
-        
+
+        myies_log('Updating person: ' . $person_uuid, 'Wicket API Helper');
+
+        $encoded_body = $this->safe_json_encode($request_body);
+        if ($encoded_body === false) {
+            return array('success' => false, 'message' => 'Failed to encode request body');
+        }
+
         $response = wp_remote_request($api_url, array(
             'method' => 'PATCH',
             'headers' => array(
@@ -214,25 +291,24 @@ class Wicket_API_Helper {
                 'Content-Type' => 'application/json',
                 'Accept' => 'application/json'
             ),
-            'body' => json_encode($request_body),
-            'timeout' => 30
+            'body' => $encoded_body,
+            'timeout' => $this->get_timeout()
         ));
-        
+
         if (is_wp_error($response)) {
             return array('success' => false, 'message' => $response->get_error_message());
         }
-        
+
         $status_code = wp_remote_retrieve_response_code($response);
-        $body = wp_remote_retrieve_body($response);
-        
-        error_log('[Wicket API Helper] Response status: ' . $status_code);
-        error_log('[Wicket API Helper] Response: ' . $body);
-        
+        $body = $this->safe_json_decode(wp_remote_retrieve_body($response));
+
+        myies_log('Person update response status: ' . $status_code, 'Wicket API Helper');
+
         return array(
             'success' => ($status_code === 200),
-            'message' => ($status_code === 200) ? 'Updated successfully' : "Error: {$status_code} - {$body}",
+            'message' => ($status_code === 200) ? 'Updated successfully' : "Error: status {$status_code}",
             'status_code' => $status_code,
-            'data' => json_decode($body, true)
+            'data' => $body
         );
     }
     
@@ -262,10 +338,10 @@ class Wicket_API_Helper {
             return null;
         }
         
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        return $body['data'] ?? null;
+        $body = $this->safe_json_decode(wp_remote_retrieve_body($response));
+        return (is_array($body) && isset($body['data'])) ? $body['data'] : null;
     }
-    
+
     // =========================================================================
     // PHONE METHODS
     // =========================================================================
@@ -297,8 +373,7 @@ class Wicket_API_Helper {
             )
         );
         
-        error_log('[Wicket API Helper] Updating phone: ' . $phone_uuid);
-        error_log('[Wicket API Helper] Phone data: ' . json_encode($request_body, JSON_PRETTY_PRINT));
+        myies_log('Updating phone: ' . $phone_uuid, 'Wicket API Helper');
         
         $response = wp_remote_request($api_url, array(
             'method' => 'PATCH',
@@ -318,7 +393,7 @@ class Wicket_API_Helper {
         $code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
         
-        error_log('[Wicket API Helper] Phone update response: ' . $code . ' - ' . $body);
+        myies_log('Phone update response: ' . $code, 'Wicket API Helper');
         
         return array(
             'success' => ($code === 200),
@@ -360,16 +435,16 @@ class Wicket_API_Helper {
         }
         
         $code = wp_remote_retrieve_response_code($response);
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        
+        $body = $this->safe_json_decode(wp_remote_retrieve_body($response));
+
         return array(
-            'success' => ($code == 200 || $code == 201),
-            'message' => ($code == 200 || $code == 201) ? 'Phone created' : "Error: {$code}",
+            'success' => ($code === 200 || $code === 201),
+            'message' => ($code === 200 || $code === 201) ? 'Phone created' : "Error: {$code}",
             'data' => $body,
             'status_code' => $code
         );
     }
-    
+
     // =========================================================================
     // ADDRESS METHODS
     // =========================================================================
@@ -401,8 +476,7 @@ class Wicket_API_Helper {
             )
         );
         
-        error_log('[Wicket API Helper] Updating address: ' . $address_uuid);
-        error_log('[Wicket API Helper] Address data: ' . json_encode($request_body, JSON_PRETTY_PRINT));
+        myies_log('Updating address: ' . $address_uuid, 'Wicket API Helper');
         
         $response = wp_remote_request($api_url, array(
             'method' => 'PATCH',
@@ -422,7 +496,7 @@ class Wicket_API_Helper {
         $code = wp_remote_retrieve_response_code($response);
         $body = wp_remote_retrieve_body($response);
         
-        error_log('[Wicket API Helper] Address update response: ' . $code . ' - ' . $body);
+        myies_log('Address update response: ' . $code, 'Wicket API Helper');
         
         return array(
             'success' => ($code === 200),
@@ -449,8 +523,7 @@ class Wicket_API_Helper {
             )
         );
         
-        error_log('[Wicket API Helper] Creating address for person: ' . $person_uuid);
-        error_log('[Wicket API Helper] Address data: ' . json_encode($request_body, JSON_PRETTY_PRINT));
+        myies_log('Creating address for person: ' . $person_uuid, 'Wicket API Helper');
         
         $response = wp_remote_post($api_url, array(
             'headers' => array(
@@ -467,18 +540,16 @@ class Wicket_API_Helper {
         }
         
         $code = wp_remote_retrieve_response_code($response);
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        
-        error_log('[Wicket API Helper] Address create response: ' . $code);
-        
+        $body = $this->safe_json_decode(wp_remote_retrieve_body($response));
+
         return array(
-            'success' => ($code == 200 || $code == 201),
-            'message' => ($code == 200 || $code == 201) ? 'Address created' : "Error: {$code}",
+            'success' => ($code === 200 || $code === 201),
+            'message' => ($code === 200 || $code === 201) ? 'Address created' : "Error: {$code}",
             'data' => $body,
             'status_code' => $code
         );
     }
-    
+
     /**
      * Get person's addresses
      */
@@ -501,10 +572,10 @@ class Wicket_API_Helper {
             return array();
         }
         
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        return $body['data'] ?? array();
+        $body = $this->safe_json_decode(wp_remote_retrieve_body($response));
+        return (is_array($body) && isset($body['data'])) ? $body['data'] : array();
     }
-    
+
     /**
      * Get person's phones
      */
@@ -527,10 +598,9 @@ class Wicket_API_Helper {
             return array();
         }
         
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        return $body['data'] ?? array();
+        $body = $this->safe_json_decode(wp_remote_retrieve_body($response));
+        return (is_array($body) && isset($body['data'])) ? $body['data'] : array();
     }
-
 
     // =========================================================================
     // ORGANIZATION METHODS
@@ -562,12 +632,12 @@ class Wicket_API_Helper {
         ));
         
         if (is_wp_error($response)) {
-            error_log('[Wicket API Helper] Organizations fetch error: ' . $response->get_error_message());
+            myies_log('Organizations fetch error: ' . $response->get_error_message(), 'Wicket API Helper');
             return null;
         }
-        
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        return $body;
+
+        $body = $this->safe_json_decode(wp_remote_retrieve_body($response));
+        return is_array($body) ? $body : null;
     }
     
     /**
@@ -599,10 +669,10 @@ class Wicket_API_Helper {
             return null;
         }
         
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        return $body['data'] ?? null;
+        $body = $this->safe_json_decode(wp_remote_retrieve_body($response));
+        return (is_array($body) && isset($body['data'])) ? $body['data'] : null;
     }
-    
+
     /**
      * Search organizations by name in Wicket API
      * 
@@ -615,7 +685,8 @@ class Wicket_API_Helper {
         if (is_wp_error($token)) {
             return array();
         }
-        
+
+        $limit = max(1, min((int) $limit, 500));
         $endpoint = $this->get_api_url() . '/organizations?filter[legal_name_cont]=' . urlencode($search_term) . '&page[size]=' . $limit;
         
         $response = wp_remote_get($endpoint, array(
@@ -631,10 +702,10 @@ class Wicket_API_Helper {
             return array();
         }
         
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        return $body['data'] ?? array();
+        $body = $this->safe_json_decode(wp_remote_retrieve_body($response));
+        return (is_array($body) && isset($body['data'])) ? $body['data'] : array();
     }
-    
+
     /**
      * Create new organization in Wicket
      * 
@@ -654,8 +725,8 @@ class Wicket_API_Helper {
             )
         );
         
-        error_log('[Wicket API Helper] Creating organization: ' . json_encode($request_body, JSON_PRETTY_PRINT));
-        
+        myies_log('Creating organization', 'Wicket API Helper');
+
         $response = wp_remote_post($this->get_api_url() . '/organizations', array(
             'headers' => array(
                 'Authorization' => 'Bearer ' . $token,
@@ -671,10 +742,10 @@ class Wicket_API_Helper {
         }
         
         $code = wp_remote_retrieve_response_code($response);
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        
-        if ($code === 201) {
-            error_log('[Wicket API Helper] Organization created: ' . ($body['data']['id'] ?? 'unknown'));
+        $body = $this->safe_json_decode(wp_remote_retrieve_body($response));
+
+        if ($code === 201 && is_array($body)) {
+            myies_log('Organization created: ' . ($body['data']['id'] ?? 'unknown'), 'Wicket API Helper');
             return array(
                 'success' => true,
                 'data' => $body['data'],
@@ -682,12 +753,12 @@ class Wicket_API_Helper {
             );
         }
         
-        $error_msg = isset($body['errors']) ? json_encode($body['errors']) : "Status {$code}";
-        error_log('[Wicket API Helper] Organization creation failed: ' . $error_msg);
-        
+        $error_msg = (is_array($body) && isset($body['errors'])) ? json_encode($body['errors']) : "Status {$code}";
+        myies_log('Organization creation failed: ' . $error_msg, 'Wicket API Helper');
+
         return array('success' => false, 'message' => $error_msg, 'status_code' => $code);
     }
-    
+
     /**
      * Update organization in Wicket
      * 
@@ -713,7 +784,7 @@ class Wicket_API_Helper {
             )
         );
         
-        error_log('[Wicket API Helper] Updating organization: ' . $org_uuid);
+        myies_log('Updating organization: ' . $org_uuid, 'Wicket API Helper');
         
         $response = wp_remote_request($this->get_api_url() . '/organizations/' . $org_uuid, array(
             'method' => 'PATCH',
@@ -731,16 +802,16 @@ class Wicket_API_Helper {
         }
         
         $code = wp_remote_retrieve_response_code($response);
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        
+        $body = $this->safe_json_decode(wp_remote_retrieve_body($response));
+
         return array(
             'success' => ($code === 200),
             'message' => ($code === 200) ? 'Organization updated' : "Error: {$code}",
-            'data' => $body['data'] ?? null,
+            'data' => (is_array($body) && isset($body['data'])) ? $body['data'] : null,
             'status_code' => $code
         );
     }
-    
+
     // =========================================================================
     // CONNECTION METHODS (Person to Organization)
     // =========================================================================
@@ -773,12 +844,12 @@ class Wicket_API_Helper {
         ));
         
         if (is_wp_error($response)) {
-            error_log('[Wicket API Helper] Failed to get connections: ' . $response->get_error_message());
+            myies_log('Failed to get connections: ' . $response->get_error_message(), 'Wicket API Helper');
             return array();
         }
-        
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        return $body['data'] ?? array();
+
+        $body = $this->safe_json_decode(wp_remote_retrieve_body($response));
+        return (is_array($body) && isset($body['data'])) ? $body['data'] : array();
     }
     
     /**
@@ -805,7 +876,7 @@ class Wicket_API_Helper {
         foreach ($existing as $conn) {
             $to_id = $conn['relationships']['to']['data']['id'] ?? null;
             if ($to_id === $org_uuid) {
-                error_log('[Wicket API Helper] Connection already exists between person and org');
+                myies_log('Connection already exists between person and org', 'Wicket API Helper');
                 return array(
                     'success' => true,
                     'message' => 'Connection already exists',
@@ -840,7 +911,7 @@ class Wicket_API_Helper {
             )
         );
         
-        error_log('[Wicket API Helper] Creating person-org connection: ' . json_encode($request_body, JSON_PRETTY_PRINT));
+        myies_log('Creating person-org connection', 'Wicket API Helper');
         
         $response = wp_remote_post($this->get_api_url() . '/connections', array(
             'headers' => array(
@@ -857,19 +928,19 @@ class Wicket_API_Helper {
         }
         
         $code = wp_remote_retrieve_response_code($response);
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        
+        $body = $this->safe_json_decode(wp_remote_retrieve_body($response));
+
         if ($code === 200 || $code === 201) {
-            error_log('[Wicket API Helper] Connection created successfully');
+            myies_log('Connection created successfully', 'Wicket API Helper');
             return array(
                 'success' => true,
-                'data' => $body['data'] ?? $body,
-                'connection_uuid' => $body['data']['id'] ?? null
+                'data' => (is_array($body) && isset($body['data'])) ? $body['data'] : $body,
+                'connection_uuid' => (is_array($body) && isset($body['data']['id'])) ? $body['data']['id'] : null
             );
         }
         
-        $error_msg = isset($body['errors']) ? json_encode($body['errors']) : "Status {$code}";
-        error_log('[Wicket API Helper] Connection creation failed: ' . $error_msg);
+        $error_msg = (is_array($body) && isset($body['errors'])) ? json_encode($body['errors']) : "Status {$code}";
+        myies_log('Connection creation failed: ' . $error_msg, 'Wicket API Helper');
         
         return array('success' => false, 'message' => $error_msg, 'status_code' => $code);
     }
@@ -954,12 +1025,12 @@ class Wicket_API_Helper {
         }
         
         $code = wp_remote_retrieve_response_code($response);
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        
+        $body = $this->safe_json_decode(wp_remote_retrieve_body($response));
+
         return array(
             'success' => ($code === 200),
             'message' => ($code === 200) ? 'Connection updated' : "Error: {$code}",
-            'data' => $body['data'] ?? null,
+            'data' => (is_array($body) && isset($body['data'])) ? $body['data'] : null,
             'status_code' => $code
         );
     }

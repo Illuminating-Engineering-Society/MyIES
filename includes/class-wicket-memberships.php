@@ -24,7 +24,12 @@ class Wicket_Memberships {
         }
         return self::$instance;
     }
-    
+
+    private function __clone() {}
+    public function __wakeup() {
+        throw new \Exception('Cannot unserialize singleton');
+    }
+
     private function __construct() {
         global $wpdb;
         $this->table_name = $wpdb->prefix . 'wicket_user_memberships';
@@ -81,7 +86,7 @@ class Wicket_Memberships {
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
         
-        $table_exists = $wpdb->get_var("SHOW TABLES LIKE '{$this->table_name}'") === $this->table_name;
+        $table_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $this->table_name)) === $this->table_name;
         error_log('[WICKET MEMBERSHIPS] Table exists: ' . ($table_exists ? 'YES' : 'NO'));
         
         return $table_exists;
@@ -89,7 +94,7 @@ class Wicket_Memberships {
     
     public function table_exists() {
         global $wpdb;
-        return $wpdb->get_var("SHOW TABLES LIKE '{$this->table_name}'") === $this->table_name;
+        return $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $this->table_name)) === $this->table_name;
     }
     
     private function ensure_table() {
@@ -137,31 +142,44 @@ class Wicket_Memberships {
         }
         
         $stats = array('person_memberships' => 0, 'org_memberships' => 0, 'errors' => 0);
-        
+
         global $wpdb;
-        $wpdb->delete($this->table_name, array('wp_user_id' => $user_id));
-        
-        // Fetch and save person memberships
+
+        // Fetch new data first before deleting old records
+        // This prevents data loss if API calls fail
+        $new_person_memberships = array();
+        $new_org_assignments = array();
+
+        // Fetch person memberships
         $person_memberships = $this->fetch_person_memberships($person_uuid, $token);
         if (!is_wp_error($person_memberships) && !empty($person_memberships)) {
-            foreach ($person_memberships as $membership) {
-                if ($this->save_membership($user_id, $person_uuid, $membership, 'person', $token)) {
-                    $stats['person_memberships']++;
-                } else {
-                    $stats['errors']++;
-                }
-            }
+            $new_person_memberships = $person_memberships;
         }
-        
-        // Fetch and save org membership assignments
+
+        // Fetch org membership assignments
         $org_assignments = $this->fetch_org_membership_assignments($person_uuid, $token);
         if (!is_wp_error($org_assignments) && !empty($org_assignments)) {
-            foreach ($org_assignments as $assignment) {
-                if ($this->save_membership($user_id, $person_uuid, $assignment, 'organization', $token)) {
-                    $stats['org_memberships']++;
-                } else {
-                    $stats['errors']++;
-                }
+            $new_org_assignments = $org_assignments;
+        }
+
+        // Only delete old records after successful API fetches
+        $wpdb->delete($this->table_name, array('wp_user_id' => $user_id));
+
+        // Save person memberships
+        foreach ($new_person_memberships as $membership) {
+            if ($this->save_membership($user_id, $person_uuid, $membership, 'person', $token)) {
+                $stats['person_memberships']++;
+            } else {
+                $stats['errors']++;
+            }
+        }
+
+        // Save org membership assignments
+        foreach ($new_org_assignments as $assignment) {
+            if ($this->save_membership($user_id, $person_uuid, $assignment, 'organization', $token)) {
+                $stats['org_memberships']++;
+            } else {
+                $stats['errors']++;
             }
         }
         

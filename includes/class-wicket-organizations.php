@@ -28,7 +28,12 @@ class Wicket_Organizations {
         }
         return self::$instance;
     }
-    
+
+    private function __clone() {}
+    public function __wakeup() {
+        throw new \Exception('Cannot unserialize singleton');
+    }
+
     /**
      * Constructor
      */
@@ -162,8 +167,8 @@ class Wicket_Organizations {
         error_log('[WICKET ORGS] dbDelta result for connections: ' . print_r($result_connections, true));
         
         // Verify tables exist
-        $orgs_exists = $wpdb->get_var("SHOW TABLES LIKE '{$this->table_name}'") === $this->table_name;
-        $conn_exists = $wpdb->get_var("SHOW TABLES LIKE '{$this->connections_table}'") === $this->connections_table;
+        $orgs_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $this->table_name)) === $this->table_name;
+        $conn_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $this->connections_table)) === $this->connections_table;
         
         error_log('[WICKET ORGS] Organizations table exists: ' . ($orgs_exists ? 'YES' : 'NO'));
         error_log('[WICKET ORGS] Connections table exists: ' . ($conn_exists ? 'YES' : 'NO'));
@@ -200,8 +205,8 @@ class Wicket_Organizations {
     public function tables_exist() {
         global $wpdb;
         
-        $orgs_exists = $wpdb->get_var("SHOW TABLES LIKE '{$this->table_name}'") === $this->table_name;
-        $conn_exists = $wpdb->get_var("SHOW TABLES LIKE '{$this->connections_table}'") === $this->connections_table;
+        $orgs_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $this->table_name)) === $this->table_name;
+        $conn_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $this->connections_table)) === $this->connections_table;
         
         return $orgs_exists && $conn_exists;
     }
@@ -249,8 +254,9 @@ class Wicket_Organizations {
         $page = 1;
         $page_size = 100; // Max recommended by Wicket
         $has_more = true;
-        
-        while ($has_more) {
+        $max_pages = 1000; // Safety limit to prevent infinite loops
+
+        while ($has_more && $page <= $max_pages) {
             $result = $this->fetch_organizations_page($token, $page, $page_size);
             
             if (is_wp_error($result)) {
@@ -721,8 +727,8 @@ class Wicket_Organizations {
         // Table status info
         $orgs_table = $wpdb->prefix . 'wicket_organizations';
         $conn_table = $wpdb->prefix . 'wicket_person_org_connections';
-        $orgs_exists = $wpdb->get_var("SHOW TABLES LIKE '{$orgs_table}'") === $orgs_table;
-        $conn_exists = $wpdb->get_var("SHOW TABLES LIKE '{$conn_table}'") === $conn_table;
+        $orgs_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $orgs_table)) === $orgs_table;
+        $conn_exists = $wpdb->get_var($wpdb->prepare("SHOW TABLES LIKE %s", $conn_table)) === $conn_table;
         ?>
         
         <div class="wrap" style="margin-top: 30px;">

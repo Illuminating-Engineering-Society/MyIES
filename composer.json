@@ -1,0 +1,7 @@
+{
+    "name": "myies/integration",
+    "type": "wordpress-plugin",
+    "require-dev": {
+        "phpunit/phpunit": "^10"
+    }
+}

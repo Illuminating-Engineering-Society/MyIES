@@ -375,8 +375,7 @@ class WicketBulkSync {
      * Start bulk sync process
      */
     public function start_bulk_sync() {
-        error_log('Wicket Bulk Sync: start_bulk_sync called');
-        error_log('POST data: ' . print_r($_POST, true));
+        myies_log('start_bulk_sync called', 'Wicket Bulk Sync');
         
         if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'wicket_bulk_sync')) {
             error_log('Wicket Bulk Sync: Nonce verification failed');
@@ -390,19 +389,20 @@ class WicketBulkSync {
             return;
         }
         
-        // Check if sync is already in progress
-        if (get_option('wicket_bulk_sync_in_progress', false)) {
-            error_log('Wicket Bulk Sync: Sync already in progress');
+        // Atomic lock using transients to prevent race conditions
+        if (get_transient('wicket_bulk_sync_lock')) {
+            myies_log('Sync already in progress (lock active)', 'Wicket Bulk Sync');
             wp_send_json_error(array('message' => 'Bulk sync already in progress'));
             return;
         }
-        
+        set_transient('wicket_bulk_sync_lock', true, 600); // 10-minute lock timeout
+
         // Get total user count
         $user_count = count_users();
         $total_users = $user_count['total_users'];
-        
-        error_log('Wicket Bulk Sync: Total users to sync: ' . $total_users);
-        
+
+        myies_log('Total users to sync: ' . $total_users, 'Wicket Bulk Sync');
+
         // Initialize sync status
         update_option('wicket_bulk_sync_in_progress', true);
         update_option('wicket_bulk_sync_status', array(
@@ -550,7 +550,12 @@ class WicketBulkSync {
             wp_send_json_error(array('message' => 'Security check failed'));
             return;
         }
-        
+
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error(array('message' => 'Permission denied'));
+            return;
+        }
+
         $status = get_option('wicket_bulk_sync_status', array());
         
         // Get recent logs (last 5)

@@ -99,6 +99,11 @@ class MyIES_GitHub_Updater {
         add_filter('plugins_api', array($this, 'plugin_info'), 10, 3);
         add_filter('upgrader_post_install', array($this, 'after_install'), 10, 3);
 
+        // Add auth header for private repo downloads instead of query param
+        if (!empty($this->access_token)) {
+            add_filter('http_request_args', array($this, 'add_auth_header_to_download'), 10, 2);
+        }
+
         // Add "Check for updates" link on plugins page
         add_filter('plugin_action_links_' . $this->plugin_basename, array($this, 'add_action_links'));
 
@@ -246,11 +251,6 @@ class MyIES_GitHub_Updater {
                 }
             }
 
-            // Add auth token to download URL if private repo
-            if (!empty($this->access_token)) {
-                $download_url = add_query_arg('access_token', $this->access_token, $download_url);
-            }
-
             $transient->response[$this->plugin_basename] = (object) array(
                 'slug' => $this->plugin_slug,
                 'plugin' => $this->plugin_basename,
@@ -375,6 +375,16 @@ class MyIES_GitHub_Updater {
         $changelog = preg_replace('/^- (.+)$/m', '<li>$1</li>', $changelog);
 
         return '<div class="changelog">' . $changelog . '</div>';
+    }
+
+    /**
+     * Add Authorization header to GitHub download requests for private repos
+     */
+    public function add_auth_header_to_download($args, $url) {
+        if (!empty($this->access_token) && strpos($url, 'github.com') !== false) {
+            $args['headers']['Authorization'] = 'token ' . $this->access_token;
+        }
+        return $args;
     }
 
     /**

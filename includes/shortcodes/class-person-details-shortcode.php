@@ -53,12 +53,12 @@ function acf_user_fieldgroup_shortcode($atts) {
             // For other field types, only display if they have a value
             if (!empty($value)) {
                 $should_display = true;
-                $display_value = $value;
+                $display_value = is_array($value) ? esc_html(implode(', ', $value)) : esc_html($value);
             }
         }
         
         if ($should_display) {
-            $output .= '<p><strong>' . $field['label'] . ':</strong> ' . $display_value . '</p>';
+            $output .= '<p><strong>' . esc_html($field['label']) . ':</strong> ' . $display_value . '</p>';
         }
     }
     

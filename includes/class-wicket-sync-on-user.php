@@ -116,7 +116,8 @@ class WicketLoginSync {
             // Check if we've already synced this via other hooks
             $last_sync = get_user_meta($user_id, 'wicket_last_login_sync', true);
             
-            if (!$last_sync || (time() - strtotime($last_sync)) > 60) { // Don't sync if synced in last minute
+            $last_sync_time = $last_sync ? strtotime($last_sync) : false;
+            if (!$last_sync || !$last_sync_time || (time() - $last_sync_time) > 60) { // Don't sync if synced in last minute
                 error_log("Wicket Sync: Current user sync for recently registered user {$user_id}");
                 $this->perform_user_sync($user, 'current_user_set');
             }
@@ -152,7 +153,8 @@ class WicketLoginSync {
         // Check if we should throttle syncs to avoid API overload
         $last_sync = get_user_meta($user->ID, 'wicket_last_login_sync', true);
         
-        if ($last_sync && (time() - strtotime($last_sync)) < $sync_interval) {
+        $last_sync_time = $last_sync ? strtotime($last_sync) : false;
+        if ($last_sync && $last_sync_time && (time() - $last_sync_time) < $sync_interval) {
             error_log("Wicket Sync: Skipping {$sync_source} sync for user {$user->ID} - too recent (last: {$last_sync})");
             return;
         }

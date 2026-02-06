@@ -44,7 +44,12 @@ class Wicket_Integration {
         }
         return self::$instance;
     }
-    
+
+    private function __clone() {}
+    public function __wakeup() {
+        throw new \Exception('Cannot unserialize singleton');
+    }
+
     /**
      * Constructor
      */
@@ -60,6 +65,10 @@ class Wicket_Integration {
         // GitHub Updater (must load early for update checks)
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/class-github-updater.php';
 
+        // API layer (load before classes that depend on wicket_api())
+        require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/fluent-forms/class-wicket-error-handler.php';
+        require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/fluent-forms/class-wicket-api-helper.php';
+
         // Core functionality
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/class-person-details.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/class-wicket-bulk-sync.php';
@@ -71,11 +80,10 @@ class Wicket_Integration {
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/class-surecart-wicket-sync.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/membership-history-modal.php';
 
-
         // Admin & Settings
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/admin/class-wicket-settings-page.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/admin/class-hide-utilities-for-users.php';
-        
+
         // Frontend
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/shortcodes/class-person-details-shortcode.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/shortcodes/shortcode-membership-history.php';
@@ -87,19 +95,14 @@ class Wicket_Integration {
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/frontend/class-section-functions.php';
 
         // Fluent Forms Handlers
-     
-        require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/fluent-forms/class-wicket-error-handler.php';
-        require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/fluent-forms/class-wicket-api-helper.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/fluent-forms/class-wicket-additional-info.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/fluent-forms/class-wicket-contact-details.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/fluent-forms/class-additional-info-education.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/fluent-forms/class-organization-information.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/fluent-forms/class-wicket-communication-preferences.php';
-
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/fluent-forms/class-wicket-personal-details.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/fluent-forms/class-wicket-professional-info.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/fluent-forms/class-wicket-add-address.php';
-        //require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/fluent-forms/debug-fluent-forms-all.php';
     }
     
     /**
@@ -118,19 +121,22 @@ class Wicket_Integration {
      * Plugin activation
      */
     public function activate() {
-
         // Create organization tables
         if (class_exists('Wicket_Organizations')) {
             $orgs = Wicket_Organizations::get_instance();
             $orgs->create_tables();
+        } else {
+            error_log('[MyIES] Warning: Wicket_Organizations class not found during activation');
         }
 
         // Create memberships table
         if (class_exists('Wicket_Memberships')) {
             $memberships = Wicket_Memberships::get_instance();
             $memberships->create_table();
+        } else {
+            error_log('[MyIES] Warning: Wicket_Memberships class not found during activation');
         }
-        
+
         flush_rewrite_rules();
     }
     
