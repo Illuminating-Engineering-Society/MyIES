@@ -806,11 +806,27 @@ class Wicket_API_Helper {
             $to_id = $conn['relationships']['to']['data']['id'] ?? null;
             if ($to_id === $org_uuid) {
                 error_log('[Wicket API Helper] Connection already exists between person and org');
+
+                // If dates were provided, update the existing connection
+                $existing_conn_uuid = $conn['id'] ?? null;
+                if ($existing_conn_uuid && ($starts_at || $ends_at)) {
+                    $update_data = array();
+                    if ($starts_at) {
+                        $update_data['starts_at'] = $starts_at;
+                    }
+                    if ($ends_at) {
+                        $update_data['ends_at'] = $ends_at;
+                    }
+                    error_log('[Wicket API Helper] Updating existing connection dates: ' . $existing_conn_uuid);
+                    $this->update_connection($existing_conn_uuid, $update_data);
+                }
+
                 return array(
                     'success' => true,
                     'message' => 'Connection already exists',
                     'data' => $conn,
-                    'already_existed' => true
+                    'already_existed' => true,
+                    'connection_uuid' => $existing_conn_uuid
                 );
             }
         }
@@ -821,11 +837,11 @@ class Wicket_API_Helper {
             'connection_type' => 'person_to_organization'
         );
 
-        if (!empty($starts_at)) {
+        if ($starts_at) {
             $attributes['starts_at'] = $starts_at;
         }
 
-        if (!empty($ends_at)) {
+        if ($ends_at) {
             $attributes['ends_at'] = $ends_at;
         }
 

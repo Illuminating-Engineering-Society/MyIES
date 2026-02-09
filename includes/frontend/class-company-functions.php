@@ -476,13 +476,13 @@ class Wicket_Company_Functions {
         }
 
         $api = wicket_api();
-        $result = $api->create_person_org_connection($person_uuid, $org_uuid, 'member', '', $starts_at, $ends_at);
-        
+        $result = $api->create_person_org_connection($person_uuid, $org_uuid, 'employee', '', $starts_at, $ends_at);
+
         if ($result['success']) {
             // Sync to local database
             $orgs = wicket_organizations();
             $orgs->sync_user_connections($user_id);
-            
+
             // If this is user's first company, set as primary
             $primary = get_user_meta($user_id, 'wicket_primary_org_uuid', true);
             if (empty($primary)) {
@@ -551,7 +551,7 @@ class Wicket_Company_Functions {
         $org_uuid = $create_result['uuid'];
 
         // Create connection to the new organization
-        $conn_result = $api->create_person_org_connection($person_uuid, $org_uuid, 'member', '', $starts_at, $ends_at);
+        $conn_result = $api->create_person_org_connection($person_uuid, $org_uuid, 'employee', '', $starts_at, $ends_at);
         
         if (!$conn_result['success']) {
             wp_send_json_error(array('message' => 'Organization created but failed to connect: ' . $conn_result['message']));
@@ -663,7 +663,7 @@ class Wicket_Company_Functions {
         } elseif (!$has_connection) {
             // Create new connection in Wicket
             error_log('[WICKET COMPANY] Creating new connection in Wicket');
-            $result = $api->create_person_org_connection($person_uuid, $org_uuid, 'member', 'Organization member', $starts_at, $ends_at);
+            $result = $api->create_person_org_connection($person_uuid, $org_uuid, 'employee', 'Organization member', $starts_at, $ends_at);
 
             if (!$result['success'] && empty($result['already_existed'])) {
                 error_log('[WICKET COMPANY] Failed to create connection: ' . ($result['message'] ?? 'Unknown error'));
