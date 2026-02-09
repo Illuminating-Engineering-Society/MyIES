@@ -461,20 +461,22 @@ class Wicket_Company_Functions {
         }
         
         $org_uuid = isset($_POST['org_uuid']) ? sanitize_text_field($_POST['org_uuid']) : '';
-        
+        $starts_at = isset($_POST['starts_at']) ? sanitize_text_field($_POST['starts_at']) : null;
+        $ends_at = isset($_POST['ends_at']) ? sanitize_text_field($_POST['ends_at']) : null;
+
         if (empty($org_uuid)) {
             wp_send_json_error(array('message' => 'Organization UUID required'));
         }
-        
+
         $user_id = get_current_user_id();
         $person_uuid = get_user_meta($user_id, 'wicket_person_uuid', true);
-        
+
         if (empty($person_uuid)) {
             wp_send_json_error(array('message' => 'User not linked to Wicket'));
         }
-        
+
         $api = wicket_api();
-        $result = $api->create_person_org_connection($person_uuid, $org_uuid);
+        $result = $api->create_person_org_connection($person_uuid, $org_uuid, 'member', '', $starts_at, $ends_at);
         
         if ($result['success']) {
             // Sync to local database
@@ -514,40 +516,42 @@ class Wicket_Company_Functions {
         $legal_name = isset($_POST['legal_name']) ? sanitize_text_field($_POST['legal_name']) : '';
         $type = isset($_POST['type']) ? sanitize_text_field($_POST['type']) : '';
         $alternate_name = isset($_POST['alternate_name']) ? sanitize_text_field($_POST['alternate_name']) : '';
-        
+        $starts_at = isset($_POST['starts_at']) ? sanitize_text_field($_POST['starts_at']) : null;
+        $ends_at = isset($_POST['ends_at']) ? sanitize_text_field($_POST['ends_at']) : null;
+
         if (empty($legal_name) || empty($type)) {
             wp_send_json_error(array('message' => 'Company name and type are required'));
         }
-        
+
         $user_id = get_current_user_id();
         $person_uuid = get_user_meta($user_id, 'wicket_person_uuid', true);
-        
+
         if (empty($person_uuid)) {
             wp_send_json_error(array('message' => 'User not linked to Wicket'));
         }
-        
+
         $api = wicket_api();
-        
+
         // Create the organization in Wicket
         $org_data = array(
             'legal_name' => $legal_name,
             'type' => strtolower($type)
         );
-        
+
         if (!empty($alternate_name)) {
             $org_data['alternate_name'] = $alternate_name;
         }
-        
+
         $create_result = $api->create_organization($org_data);
-        
+
         if (!$create_result['success']) {
             wp_send_json_error(array('message' => 'Failed to create organization: ' . $create_result['message']));
         }
-        
+
         $org_uuid = $create_result['uuid'];
-        
+
         // Create connection to the new organization
-        $conn_result = $api->create_person_org_connection($person_uuid, $org_uuid);
+        $conn_result = $api->create_person_org_connection($person_uuid, $org_uuid, 'member', '', $starts_at, $ends_at);
         
         if (!$conn_result['success']) {
             wp_send_json_error(array('message' => 'Organization created but failed to connect: ' . $conn_result['message']));
@@ -602,45 +606,65 @@ class Wicket_Company_Functions {
         }
         
         $org_uuid = isset($_POST['org_uuid']) ? sanitize_text_field($_POST['org_uuid']) : '';
-        
+        $starts_at = isset($_POST['starts_at']) ? sanitize_text_field($_POST['starts_at']) : null;
+        $ends_at = isset($_POST['ends_at']) ? sanitize_text_field($_POST['ends_at']) : null;
+
         if (empty($org_uuid)) {
             wp_send_json_error(array('message' => 'Organization UUID required'));
         }
-        
+
         $user_id = get_current_user_id();
         $person_uuid = get_user_meta($user_id, 'wicket_person_uuid', true);
-        
+
         if (empty($person_uuid)) {
             $person_uuid = get_user_meta($user_id, 'wicket_uuid', true);
         }
-        
+
         if (empty($person_uuid)) {
             wp_send_json_error(array('message' => 'User does not have a Wicket account'));
         }
-        
+
         error_log('[WICKET COMPANY] Setting primary company: ' . $org_uuid . ' for person: ' . $person_uuid);
-        
+
         $api = wicket_api();
-        
+
         // Check if user already has connection to this org
         $existing_connections = $api->get_person_connections($person_uuid);
         $has_connection = false;
-        
+        $existing_connection_uuid = null;
+
         foreach ($existing_connections as $conn) {
-            $conn_org_uuid = $conn['relationships']['to']['data']['id'] ?? 
+            $conn_org_uuid = $conn['relationships']['to']['data']['id'] ??
                             $conn['relationships']['organization']['data']['id'] ?? null;
             if ($conn_org_uuid === $org_uuid) {
                 $has_connection = true;
+                $existing_connection_uuid = $conn['id'] ?? null;
                 error_log('[WICKET COMPANY] User already has connection to this org');
                 break;
             }
         }
-        
-        // If no connection exists, create one in Wicket
-        if (!$has_connection) {
+
+        if ($has_connection && $existing_connection_uuid && ($starts_at || $ends_at)) {
+            // Update existing connection with new dates
+            error_log('[WICKET COMPANY] Updating existing connection dates');
+            $update_data = array();
+            if ($starts_at) {
+                $update_data['starts_at'] = $starts_at;
+            }
+            if ($ends_at) {
+                $update_data['ends_at'] = $ends_at;
+            }
+            $result = $api->update_connection($existing_connection_uuid, $update_data);
+
+            if (!$result['success']) {
+                error_log('[WICKET COMPANY] Failed to update connection dates: ' . ($result['message'] ?? 'Unknown error'));
+                wp_send_json_error(array('message' => 'Failed to update connection dates in Wicket: ' . ($result['message'] ?? 'Unknown error')));
+            }
+        } elseif (!$has_connection) {
+            // Create new connection in Wicket
             error_log('[WICKET COMPANY] Creating new connection in Wicket');
-            $result = $api->create_person_org_connection($person_uuid, $org_uuid, 'member', 'Organization member');
-            
+            $result = $api->create_person_org_connection($person_uuid, $org_uuid, 'member', 'Organization member', $starts_at, $ends_at);
+
             if (!$result['success'] && empty($result['already_existed'])) {
                 error_log('[WICKET COMPANY] Failed to create connection: ' . ($result['message'] ?? 'Unknown error'));
                 wp_send_json_error(array('message' => 'Failed to create connection in Wicket: ' . ($result['message'] ?? 'Unknown error')));

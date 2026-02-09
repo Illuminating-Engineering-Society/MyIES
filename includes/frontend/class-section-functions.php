@@ -422,6 +422,8 @@ class Wicket_Section_Functions {
         }
 
         $section_uuid = isset($_POST['section_uuid']) ? sanitize_text_field($_POST['section_uuid']) : '';
+        $starts_at = isset($_POST['starts_at']) ? sanitize_text_field($_POST['starts_at']) : null;
+        $ends_at = isset($_POST['ends_at']) ? sanitize_text_field($_POST['ends_at']) : null;
 
         if (empty($section_uuid)) {
             wp_send_json_error(array('message' => 'Section UUID required'));
@@ -445,21 +447,39 @@ class Wicket_Section_Functions {
         // Check if user already has connection to this section
         $existing_connections = $api->get_person_connections($person_uuid);
         $has_connection = false;
+        $existing_connection_uuid = null;
 
         foreach ($existing_connections as $conn) {
             $conn_org_uuid = $conn['relationships']['to']['data']['id'] ??
                             $conn['relationships']['organization']['data']['id'] ?? null;
             if ($conn_org_uuid === $section_uuid) {
                 $has_connection = true;
+                $existing_connection_uuid = $conn['id'] ?? null;
                 myies_log('User already has connection to this section', 'Section Functions');
                 break;
             }
         }
 
-        // If no connection exists, create one in Wicket
-        if (!$has_connection) {
+        if ($has_connection && $existing_connection_uuid && ($starts_at || $ends_at)) {
+            // Update existing connection with new dates
+            myies_log('Updating existing connection dates in Wicket', 'Section Functions');
+            $update_data = array();
+            if ($starts_at) {
+                $update_data['starts_at'] = $starts_at;
+            }
+            if ($ends_at) {
+                $update_data['ends_at'] = $ends_at;
+            }
+            $result = $api->update_connection($existing_connection_uuid, $update_data);
+
+            if (!$result['success']) {
+                myies_log('Failed to update connection dates: ' . ($result['message'] ?? 'Unknown error'), 'Section Functions');
+                wp_send_json_error(array('message' => 'Failed to update connection dates in Wicket: ' . ($result['message'] ?? 'Unknown error')));
+            }
+        } elseif (!$has_connection) {
+            // Create new connection in Wicket
             myies_log('Creating new connection in Wicket', 'Section Functions');
-            $result = $api->create_person_org_connection($person_uuid, $section_uuid, 'member', 'Section member');
+            $result = $api->create_person_org_connection($person_uuid, $section_uuid, 'member', 'Section member', $starts_at, $ends_at);
 
             if (!$result['success'] && empty($result['already_existed'])) {
                 myies_log('Failed to create connection: ' . ($result['message'] ?? 'Unknown error'), 'Section Functions');

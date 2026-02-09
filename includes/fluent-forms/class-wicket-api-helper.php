@@ -790,16 +790,16 @@ class Wicket_API_Helper {
      * @param string $description Optional description
      * @return array Result
      */
-    public function create_person_org_connection($person_uuid, $org_uuid, $connection_type = 'member', $description = '') {
+    public function create_person_org_connection($person_uuid, $org_uuid, $connection_type = 'member', $description = '', $starts_at = null, $ends_at = null) {
         if (empty($person_uuid) || empty($org_uuid)) {
             return array('success' => false, 'message' => 'Person and Organization UUIDs required');
         }
-        
+
         $token = $this->generate_jwt_token();
         if (is_wp_error($token)) {
             return array('success' => false, 'message' => $token->get_error_message());
         }
-        
+
         // Check if connection already exists
         $existing = $this->get_person_connections($person_uuid);
         foreach ($existing as $conn) {
@@ -814,15 +814,25 @@ class Wicket_API_Helper {
                 );
             }
         }
-        
+
+        $attributes = array(
+            'type' => $connection_type,
+            'description' => $description ?: 'Organization member',
+            'connection_type' => 'person_to_organization'
+        );
+
+        if (!empty($starts_at)) {
+            $attributes['starts_at'] = $starts_at;
+        }
+
+        if (!empty($ends_at)) {
+            $attributes['ends_at'] = $ends_at;
+        }
+
         $request_body = array(
             'data' => array(
                 'type' => 'connections',
-                'attributes' => array(
-                    'type' => $connection_type,
-                    'description' => $description ?: 'Organization member',
-                    'connection_type' => 'person_to_organization'
-                ),
+                'attributes' => $attributes,
                 'relationships' => array(
                     'from' => array(
                         'data' => array(
