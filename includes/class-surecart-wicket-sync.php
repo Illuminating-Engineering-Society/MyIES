@@ -498,8 +498,6 @@ class SureCart_Wicket_Sync {
         // REST API endpoint for manual/testing
         add_action('rest_api_init', [$this, 'register_rest_routes']);
 
-        // Pre-purchase company check for org membership products
-        add_action('wp_footer', [$this, 'maybe_block_org_purchase']);
     }
 
     /**
@@ -918,82 +916,6 @@ class SureCart_Wicket_Sync {
         ];
     }
 
-    /**
-     * On SureCart product pages, hide the buy button if the product requires
-     * an organization membership and the logged-in user has no company set.
-     */
-    public function maybe_block_org_purchase() {
-        if (!is_singular('sc_product') || !is_user_logged_in()) {
-            return;
-        }
-
-        $post_id = get_the_ID();
-        $sc_id = get_post_meta($post_id, 'sc_id', true);
-        if (!$sc_id) {
-            return;
-        }
-
-        try {
-            $svc = new Wicket_Membership_Service();
-        } catch (Exception $e) {
-            return;
-        }
-
-        $entry = $svc->get_mapping_entry($sc_id);
-        if (!$entry || $entry['type'] !== 'organization') {
-            return;
-        }
-
-        // Check if user has an org UUID
-        $org_uuid = $svc->get_user_org_uuid(get_current_user_id());
-        if ($org_uuid) {
-            return; // User has a company, allow purchase
-        }
-
-        $company_page_url = home_url('/company');
-        ?>
-        <style>
-            sc-checkout-form,
-            sc-product-buy-button,
-            .sc-checkout-form,
-            .sc-product-buy-button,
-            sc-buy-button {
-                display: none !important;
-            }
-            .wicket-org-membership-warning {
-                background: #fff3cd;
-                border: 1px solid #ffc107;
-                border-radius: 6px;
-                padding: 16px 20px;
-                margin: 20px 0;
-                font-size: 15px;
-                line-height: 1.5;
-                color: #856404;
-            }
-            .wicket-org-membership-warning a {
-                color: #533f03;
-                font-weight: 600;
-            }
-        </style>
-        <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Find the product content area and prepend a warning
-            var buyBtns = document.querySelectorAll('sc-checkout-form, sc-product-buy-button, .sc-checkout-form, .sc-product-buy-button, sc-buy-button');
-            if (buyBtns.length === 0) return;
-
-            var warning = document.createElement('div');
-            warning.className = 'wicket-org-membership-warning';
-            warning.innerHTML = '<?php echo esc_js(
-                '<strong>' . __('Company Required', 'wicket-integration') . '</strong><br>' .
-                __('You must set up your company before purchasing a Sustaining Membership.', 'wicket-integration') .
-                ' <a href="' . esc_url($company_page_url) . '">' . __('Set up your company', 'wicket-integration') . '</a>'
-            ); ?>';
-
-            buyBtns[0].parentNode.insertBefore(warning, buyBtns[0]);
-        });
-        </script>
-        <?php
-    }
 }
 
 // Initialize the sync handler
