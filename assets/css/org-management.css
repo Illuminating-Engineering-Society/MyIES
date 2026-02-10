@@ -1,0 +1,200 @@
+/* ==========================================================================
+   Organization Management — [myies_org_management]
+   ========================================================================== */
+
+.myies-orgmgmt {
+	max-width: 900px;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+}
+
+.myies-orgmgmt--unauthorized {
+	padding: 24px;
+	background: #f9f9f9;
+	border: 1px solid #ddd;
+	border-radius: 6px;
+}
+
+/* ---------- Header ---------- */
+
+.myies-orgmgmt__header h3 {
+	margin: 0 0 20px;
+	font-size: 1.3em;
+}
+
+/* ---------- Add member section ---------- */
+
+.myies-orgmgmt__add {
+	padding: 20px;
+	background: #f9f9f9;
+	border: 1px solid #ddd;
+	border-radius: 6px;
+	margin-bottom: 24px;
+}
+
+.myies-orgmgmt__add h4 {
+	margin: 0 0 12px;
+}
+
+/* Search input */
+.myies-orgmgmt__search-wrap {
+	position: relative;
+}
+
+.myies-orgmgmt__search-wrap input[type="text"] {
+	width: 100%;
+	padding: 10px 12px;
+	font-size: 14px;
+	border: 1px solid #ccc;
+	border-radius: 4px;
+	box-sizing: border-box;
+}
+
+/* Search results dropdown */
+.myies-orgmgmt__search-results {
+	position: absolute;
+	z-index: 100;
+	width: 100%;
+	max-height: 240px;
+	overflow-y: auto;
+	background: #fff;
+	border: 1px solid #ccc;
+	border-top: none;
+	border-radius: 0 0 4px 4px;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.myies-orgmgmt__result-item {
+	padding: 10px 12px;
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.myies-orgmgmt__result-item:hover {
+	background: #f0f5ff;
+}
+
+.myies-orgmgmt__result-item strong {
+	margin-right: 6px;
+}
+
+.myies-orgmgmt__no-result {
+	padding: 10px 12px;
+	color: #888;
+	font-style: italic;
+}
+
+/* Selected user confirmation */
+.myies-orgmgmt__selected {
+	margin-top: 12px;
+	padding: 14px 16px;
+	background: #eef6ff;
+	border: 1px solid #b3d4fc;
+	border-radius: 4px;
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 12px;
+}
+
+.myies-orgmgmt__selected-info {
+	flex: 1 1 auto;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.myies-orgmgmt__selected-info span:first-child {
+	font-weight: 600;
+}
+
+.myies-orgmgmt__selected-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+.myies-orgmgmt__selected-actions select {
+	padding: 6px 8px;
+}
+
+.myies-orgmgmt__email {
+	color: #666;
+	font-size: 0.9em;
+}
+
+.myies-orgmgmt__message {
+	margin-top: 10px;
+	font-weight: 600;
+	font-size: 0.95em;
+}
+
+/* ---------- Members list ---------- */
+
+.myies-orgmgmt__list h4 {
+	margin: 0 0 12px;
+}
+
+.myies-orgmgmt__filter {
+	margin-bottom: 12px;
+}
+
+.myies-orgmgmt__filter input[type="text"] {
+	width: 100%;
+	max-width: 360px;
+	padding: 8px 12px;
+	font-size: 14px;
+	border: 1px solid #ccc;
+	border-radius: 4px;
+	box-sizing: border-box;
+}
+
+.myies-orgmgmt__table {
+	width: 100%;
+	border-collapse: collapse;
+}
+
+.myies-orgmgmt__table th,
+.myies-orgmgmt__table td {
+	padding: 10px 12px;
+	text-align: left;
+	border-bottom: 1px solid #e0e0e0;
+}
+
+.myies-orgmgmt__table thead th {
+	background: #f5f5f5;
+	font-weight: 600;
+	font-size: 0.9em;
+	text-transform: uppercase;
+	letter-spacing: 0.03em;
+	color: #555;
+}
+
+.myies-orgmgmt__table tbody tr:hover {
+	background: #fafafa;
+}
+
+.myies-orgmgmt__table em {
+	color: #888;
+	font-size: 0.85em;
+}
+
+.myies-orgmgmt__remove-btn {
+	color: #a00 !important;
+	border-color: #a00 !important;
+}
+
+.myies-orgmgmt__remove-btn:hover {
+	background: #ffeaea !important;
+}
+
+.myies-orgmgmt__loading,
+.myies-orgmgmt__error {
+	padding: 16px 0;
+	color: #888;
+}
+
+.myies-orgmgmt__error {
+	color: #a00;
+}
