@@ -322,6 +322,10 @@ class SureCart_Wicket_Sync {
         return self::$instance;
     }
 
+    public static function get_instance_if_exists() {
+        return self::$instance;
+    }
+
     private function __construct() {
         $this->init_hooks();
     }
@@ -527,11 +531,29 @@ class SureCart_Wicket_Sync {
 
 // Initialize the sync handler
 add_action('plugins_loaded', function() {
-    // Only initialize if SureCart is active
-    if (class_exists('\SureCart\Models\Purchase')) {
+    $sc_available = class_exists('\SureCart\Models\Purchase');
+    error_log('[SURECART-WICKET] Init check (plugins_loaded:20): SureCart Purchase class = ' . ($sc_available ? 'YES' : 'NO'));
+
+    if ($sc_available) {
         SureCart_Wicket_Sync::get_instance();
+        error_log('[SURECART-WICKET] Sync handler initialized, purchase hook registered');
+    } else {
+        error_log('[SURECART-WICKET] SureCart not available, handler NOT initialized');
     }
 }, 20);
+
+// Fallback check — log if SureCart becomes available later
+add_action('init', function() {
+    if (!SureCart_Wicket_Sync::get_instance_if_exists()) {
+        $sc_available = class_exists('\SureCart\Models\Purchase');
+        error_log('[SURECART-WICKET] Init check (init): SureCart Purchase class = ' . ($sc_available ? 'YES' : 'NO'));
+        if ($sc_available) {
+            error_log('[SURECART-WICKET] SureCart IS available at init but was NOT at plugins_loaded:20 — handler needs later hook');
+            SureCart_Wicket_Sync::get_instance();
+            error_log('[SURECART-WICKET] Sync handler initialized at init (fallback)');
+        }
+    }
+});
 
 /**
  * Helper function to get credentials instance
