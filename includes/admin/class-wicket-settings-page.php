@@ -578,6 +578,10 @@ function wicket_render_surecart_mapping_tab() {
     }
     ?>
 
+    <div class="notice notice-info" style="max-width: 1000px;">
+        <p><strong>Plugin version: <?php echo WICKET_INTEGRATION_VERSION; ?></strong></p>
+    </div>
+
     <div class="card" style="max-width: 1000px; margin-top: 20px;">
         <h2><?php esc_html_e('SureCart to Wicket Membership Sync', 'wicket-integration'); ?></h2>
         <p><?php esc_html_e('Map your SureCart products to Wicket membership UUIDs. When a mapped product is purchased, the corresponding membership will be created or updated in Wicket.', 'wicket-integration'); ?></p>
