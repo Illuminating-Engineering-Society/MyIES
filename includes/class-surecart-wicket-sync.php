@@ -223,11 +223,32 @@ class Wicket_Membership_Service {
     }
 
     /**
-     * Get Wicket membership UUID from SureCart product mapping
+     * Get mapping entry for a SureCart product.
+     * Handles both legacy flat format (string) and new structured format (array).
+     *
+     * @return array|null ['membership_uuid' => string, 'type' => 'individual'|'sustaining'] or null
      */
-    public function get_membership_uuid_from_product(string $product_id): ?string {
+    public static function get_product_mapping(string $product_id): ?array {
         $mapping = get_option('wicket_surecart_membership_mapping', []);
-        return $mapping[$product_id] ?? null;
+        if (!isset($mapping[$product_id])) {
+            return null;
+        }
+
+        $entry = $mapping[$product_id];
+
+        // Legacy flat format: product_id => 'uuid-string'
+        if (is_string($entry)) {
+            return [
+                'membership_uuid' => $entry,
+                'type'            => 'individual',
+            ];
+        }
+
+        // Structured format: product_id => ['membership_uuid' => ..., 'type' => ...]
+        return [
+            'membership_uuid' => $entry['membership_uuid'] ?? '',
+            'type'            => $entry['type'] ?? 'individual',
+        ];
     }
 
     /**
@@ -269,6 +290,103 @@ class Wicket_Membership_Service {
         error_log('[SURECART-WICKET] Creating membership: person=' . $person_uuid . ', membership=' . $membership_uuid);
 
         return $this->request('/person_memberships', 'POST', $payload);
+    }
+
+    /**
+     * Create an organization membership in Wicket.
+     *
+     * Used for sustaining / organizational memberships where the membership
+     * is written to the organization record rather than the person.
+     */
+    public function create_organization_membership(
+        string $org_uuid,
+        string $membership_uuid,
+        string $owner_person_uuid,
+        ?string $starts_at = null,
+        ?string $ends_at = null
+    ) {
+        $payload = [
+            'data' => [
+                'type' => 'organization_memberships',
+                'attributes' => [
+                    'starts_at' => $starts_at ?: current_time('c'),
+                ],
+                'relationships' => [
+                    'membership' => [
+                        'data' => [
+                            'type' => 'memberships',
+                            'id'   => $membership_uuid,
+                        ],
+                    ],
+                    'organization' => [
+                        'data' => [
+                            'type' => 'organizations',
+                            'id'   => $org_uuid,
+                        ],
+                    ],
+                    'owner' => [
+                        'data' => [
+                            'type' => 'people',
+                            'id'   => $owner_person_uuid,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        if ($ends_at) {
+            $payload['data']['attributes']['ends_at'] = $ends_at;
+        }
+
+        error_log('[SURECART-WICKET] Creating org membership: org=' . $org_uuid . ', membership=' . $membership_uuid . ', owner=' . $owner_person_uuid);
+
+        return $this->request('/organization_memberships', 'POST', $payload);
+    }
+
+    /**
+     * Look up a Wicket role UUID by name.
+     * Results are cached in a transient for 24 hours.
+     */
+    public function get_role_uuid(string $role_name): ?string {
+        $roles = get_transient('myies_wicket_roles');
+
+        if ($roles === false) {
+            $res = $this->request('/roles?page[size]=200');
+            if (is_wp_error($res) || empty($res['data'])) {
+                error_log('[SURECART-WICKET] Failed to fetch roles');
+                return null;
+            }
+
+            $roles = [];
+            foreach ($res['data'] as $role) {
+                $name = $role['attributes']['name'] ?? '';
+                $roles[$name] = $role['id'];
+            }
+
+            set_transient('myies_wicket_roles', $roles, DAY_IN_SECONDS);
+        }
+
+        return $roles[$role_name] ?? null;
+    }
+
+    /**
+     * Assign one or more roles to a person in Wicket.
+     *
+     * @param string   $person_uuid
+     * @param string[] $role_uuids
+     */
+    public function assign_roles(string $person_uuid, array $role_uuids) {
+        $role_data = array_map(function ($uuid) {
+            return ['type' => 'roles', 'id' => $uuid];
+        }, $role_uuids);
+
+        error_log('[SURECART-WICKET] Assigning ' . count($role_uuids) . ' role(s) to person ' . $person_uuid);
+
+        return $this->request(
+            "/people/{$person_uuid}/relationships/roles",
+            'POST',
+            ['data' => $role_data]
+        );
     }
 
     /**
@@ -359,14 +477,15 @@ class SureCart_Wicket_Sync {
             error_log('[SURECART-WICKET] Processing product ID: ' . $product_id);
 
             // Check if this product is mapped to a Wicket membership
-            $mapping = get_option('wicket_surecart_membership_mapping', []);
-            if (!isset($mapping[$product_id])) {
+            $product_mapping = Wicket_Membership_Service::get_product_mapping($product_id);
+            if (!$product_mapping) {
                 error_log('[SURECART-WICKET] Product not mapped to Wicket membership: ' . $product_id);
                 return;
             }
 
-            $wicket_membership_uuid = $mapping[$product_id];
-            error_log('[SURECART-WICKET] Found Wicket membership UUID: ' . $wicket_membership_uuid);
+            $wicket_membership_uuid = $product_mapping['membership_uuid'];
+            $membership_type = $product_mapping['type']; // 'individual' or 'sustaining'
+            error_log('[SURECART-WICKET] Found Wicket membership UUID: ' . $wicket_membership_uuid . ' (type: ' . $membership_type . ')');
 
             // Get customer email and find WordPress user
             $customer_email = $purchase_data->customer->email ?? null;
@@ -382,7 +501,7 @@ class SureCart_Wicket_Sync {
             }
 
             // Process the membership sync
-            $this->sync_membership_to_wicket($user->ID, $wicket_membership_uuid, $purchase_data);
+            $this->sync_membership_to_wicket($user->ID, $wicket_membership_uuid, $purchase_data, $membership_type);
 
         } catch (Exception $e) {
             error_log('[SURECART-WICKET] Error processing purchase: ' . $e->getMessage());
@@ -391,8 +510,13 @@ class SureCart_Wicket_Sync {
 
     /**
      * Sync membership to Wicket
+     *
+     * @param int         $user_id
+     * @param string      $wicket_membership_uuid  Wicket membership tier UUID
+     * @param object|null $purchase_data           SureCart purchase object
+     * @param string      $membership_type         'individual' or 'sustaining'
      */
-    private function sync_membership_to_wicket($user_id, $wicket_membership_uuid, $purchase_data = null) {
+    private function sync_membership_to_wicket($user_id, $wicket_membership_uuid, $purchase_data = null, $membership_type = 'individual') {
         try {
             $svc = new Wicket_Membership_Service();
         } catch (Exception $e) {
@@ -428,26 +552,26 @@ class SureCart_Wicket_Sync {
             $ends_at = date('c', strtotime($expiration_period));
         }
 
-        // Check if user already has a Wicket person membership UUID stored
-        $existing_person_membership_uuid = get_user_meta($user_id, 'wicket_person_membership_uuid', true);
+        // Route to the correct handler based on membership type
+        if ($membership_type === 'sustaining') {
+            return $this->sync_sustaining_membership($svc, $user_id, $person_uuid, $wicket_membership_uuid, $starts_at, $ends_at);
+        }
 
-        if ($existing_person_membership_uuid) {
-            // Update existing membership
-            error_log('[SURECART-WICKET] Updating existing membership: ' . $existing_person_membership_uuid);
-            $res = $svc->update_membership(
-                $existing_person_membership_uuid,
-                $starts_at,
-                $ends_at
-            );
+        return $this->sync_individual_membership($svc, $user_id, $person_uuid, $wicket_membership_uuid, $starts_at, $ends_at);
+    }
+
+    /**
+     * Sync an individual (person) membership to Wicket
+     */
+    private function sync_individual_membership($svc, $user_id, $person_uuid, $wicket_membership_uuid, $starts_at, $ends_at) {
+        $existing = get_user_meta($user_id, 'wicket_person_membership_uuid', true);
+
+        if ($existing) {
+            error_log('[SURECART-WICKET] Updating existing individual membership: ' . $existing);
+            $res = $svc->update_membership($existing, $starts_at, $ends_at);
         } else {
-            // Create new membership
-            error_log('[SURECART-WICKET] Creating new membership');
-            $res = $svc->create_membership(
-                $person_uuid,
-                $wicket_membership_uuid,
-                $starts_at,
-                $ends_at
-            );
+            error_log('[SURECART-WICKET] Creating new individual membership');
+            $res = $svc->create_membership($person_uuid, $wicket_membership_uuid, $starts_at, $ends_at);
 
             if (!is_wp_error($res) && isset($res['data']['id'])) {
                 update_user_meta($user_id, 'wicket_person_membership_uuid', $res['data']['id']);
@@ -456,13 +580,98 @@ class SureCart_Wicket_Sync {
         }
 
         if (is_wp_error($res)) {
-            error_log('[SURECART-WICKET] Failed to sync membership: ' . $res->get_error_message());
+            error_log('[SURECART-WICKET] Failed to sync individual membership: ' . $res->get_error_message());
             return false;
         }
 
-        error_log('[SURECART-WICKET] Membership synced successfully');
+        error_log('[SURECART-WICKET] Individual membership synced successfully');
 
-        // Trigger local membership sync to update the local database
+        if (function_exists('wicket_sync_user_memberships')) {
+            wicket_sync_user_memberships($user_id);
+        }
+
+        return true;
+    }
+
+    /**
+     * Sync a sustaining (organization) membership to Wicket.
+     *
+     * 1. Reads the org_uuid the user selected before checkout (stored in transient).
+     * 2. Creates an organization_membership in Wicket (membership written to the org).
+     * 3. Ensures a person-to-org connection exists.
+     * 4. Assigns "Company - Primary Contact" and "Company - Billing Contact" roles to the person.
+     */
+    private function sync_sustaining_membership($svc, $user_id, $person_uuid, $wicket_membership_uuid, $starts_at, $ends_at) {
+        // 1. Get the organization UUID from the pre-checkout selection
+        $org_uuid = get_transient('myies_checkout_org_' . $user_id);
+
+        if (empty($org_uuid)) {
+            // Fallback: check user's primary org
+            $org_uuid = get_user_meta($user_id, 'wicket_primary_org_uuid', true);
+        }
+
+        if (empty($org_uuid)) {
+            error_log('[SURECART-WICKET] No organization UUID found for sustaining membership. User: ' . $user_id);
+            return false;
+        }
+
+        error_log('[SURECART-WICKET] Sustaining membership for org: ' . $org_uuid);
+
+        // 2. Create organization membership in Wicket
+        $res = $svc->create_organization_membership(
+            $org_uuid,
+            $wicket_membership_uuid,
+            $person_uuid,
+            $starts_at,
+            $ends_at
+        );
+
+        if (is_wp_error($res)) {
+            error_log('[SURECART-WICKET] Failed to create org membership: ' . $res->get_error_message());
+            return false;
+        }
+
+        if (isset($res['data']['id'])) {
+            update_user_meta($user_id, 'wicket_org_membership_uuid', $res['data']['id']);
+            error_log('[SURECART-WICKET] Stored org membership UUID: ' . $res['data']['id']);
+        }
+
+        // 3. Ensure person-to-org connection exists (via existing API helper)
+        if (function_exists('wicket_api')) {
+            $api = wicket_api();
+            $api->create_person_org_connection($person_uuid, $org_uuid, 'employee', 'Sustaining membership owner', $starts_at, $ends_at);
+        }
+
+        // 4. Assign contact roles
+        $role_names = [
+            'Company - Primary Contact',
+            'Company - Billing Contact',
+        ];
+
+        $role_uuids = [];
+        foreach ($role_names as $name) {
+            $uuid = $svc->get_role_uuid($name);
+            if ($uuid) {
+                $role_uuids[] = $uuid;
+            } else {
+                error_log('[SURECART-WICKET] Role not found in Wicket: ' . $name);
+            }
+        }
+
+        if (!empty($role_uuids)) {
+            $role_res = $svc->assign_roles($person_uuid, $role_uuids);
+            if (is_wp_error($role_res)) {
+                error_log('[SURECART-WICKET] Failed to assign roles: ' . $role_res->get_error_message());
+            } else {
+                error_log('[SURECART-WICKET] Roles assigned successfully');
+            }
+        }
+
+        // Clean up the transient
+        delete_transient('myies_checkout_org_' . $user_id);
+
+        error_log('[SURECART-WICKET] Sustaining membership synced successfully');
+
         if (function_exists('wicket_sync_user_memberships')) {
             wicket_sync_user_memberships($user_id);
         }
@@ -496,12 +705,13 @@ class SureCart_Wicket_Sync {
         }
 
         // Get membership UUID from mapping
-        $mapping = get_option('wicket_surecart_membership_mapping', []);
-        if (!isset($mapping[$product_id])) {
+        $product_mapping = Wicket_Membership_Service::get_product_mapping($product_id);
+        if (!$product_mapping) {
             return new WP_Error('no_mapping', 'Product not mapped to Wicket membership', ['status' => 400]);
         }
 
-        $wicket_membership_uuid = $mapping[$product_id];
+        $wicket_membership_uuid = $product_mapping['membership_uuid'];
+        $membership_type = $product_mapping['type'];
 
         try {
             $svc = new Wicket_Membership_Service();
