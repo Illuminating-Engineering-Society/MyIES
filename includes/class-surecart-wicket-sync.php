@@ -276,10 +276,12 @@ class Wicket_Membership_Service {
      */
     public function update_membership(
         string $person_membership_uuid,
-        string $membership_uuid,
+        ?string $starts_at = null,
         ?string $ends_at = null
     ) {
-        $attributes = [];
+        $attributes = [
+            'starts_at' => $starts_at ?: current_time('c'),
+        ];
         if ($ends_at) {
             $attributes['ends_at'] = $ends_at;
         }
@@ -292,14 +294,6 @@ class Wicket_Membership_Service {
                     'type' => 'person_memberships',
                     'id'   => $person_membership_uuid,
                     'attributes' => $attributes,
-                    'relationships' => [
-                        'membership' => [
-                            'data' => [
-                                'type' => 'memberships',
-                                'id'   => $membership_uuid,
-                            ],
-                        ],
-                    ],
                 ],
             ]
         );
@@ -348,7 +342,7 @@ class SureCart_Wicket_Sync {
 
         try {
             // Get purchase details with product info
-            $purchase_data = \SureCart\Models\Purchase::with(['product', 'customer', 'initial_order', 'order.checkout'])->find($purchase->id);
+            $purchase_data = \SureCart\Models\Purchase::with(['product', 'customer', 'initial_order', 'order.checkout', 'subscription', 'subscription.current_period'])->find($purchase->id);
 
             if (!$purchase_data) {
                 error_log('[SURECART-WICKET] Could not find purchase data for ID: ' . $purchase->id);
@@ -419,12 +413,19 @@ class SureCart_Wicket_Sync {
         $starts_at = current_time('c');
         $ends_at = null;
 
-        // If we have subscription data, try to get the period end
-        if ($purchase_data && isset($purchase_data->subscription)) {
+        if ($purchase_data && isset($purchase_data->subscription) && is_object($purchase_data->subscription)) {
+            // Auto-renewal: use the subscription's current period end as expiration
             $subscription = $purchase_data->subscription;
             if (isset($subscription->current_period_end_at)) {
                 $ends_at = date('c', $subscription->current_period_end_at);
             }
+        }
+
+        // Manual renewal (one-time purchase): calculate expiration from purchase date
+        if (!$ends_at && $purchase_data) {
+            $product_id = $purchase_data->product->id ?? null;
+            $expiration_period = apply_filters('myies_surecart_product_expiration_period', '+1 year', $product_id);
+            $ends_at = date('c', strtotime($expiration_period));
         }
 
         // Check if user already has a Wicket person membership UUID stored
@@ -435,7 +436,7 @@ class SureCart_Wicket_Sync {
             error_log('[SURECART-WICKET] Updating existing membership: ' . $existing_person_membership_uuid);
             $res = $svc->update_membership(
                 $existing_person_membership_uuid,
-                $wicket_membership_uuid,
+                $starts_at,
                 $ends_at
             );
         } else {
@@ -518,7 +519,7 @@ class SureCart_Wicket_Sync {
         if ($existing_person_membership_uuid) {
             $res = $svc->update_membership(
                 $existing_person_membership_uuid,
-                $wicket_membership_uuid,
+                null,
                 $ends_at
             );
         } else {
