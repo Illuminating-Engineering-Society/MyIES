@@ -114,7 +114,8 @@ class MyIES_Sustaining_Company_Select {
 		?>
 		<div class="myies-sustaining-select" id="myies-sustaining-company-select"
 		     data-nonce="<?php echo esc_attr( $nonce ); ?>"
-		     data-ajax-url="<?php echo esc_url( $ajax_url ); ?>">
+		     data-ajax-url="<?php echo esc_url( $ajax_url ); ?>"
+		     data-org-confirmed="<?php echo $confirmed_uuid ? '1' : '0'; ?>">
 
 			<h4><?php esc_html_e( 'Select Your Organization', 'wicket-integration' ); ?></h4>
 			<p class="description"><?php esc_html_e( 'This sustaining membership will be applied to the organization you select below.', 'wicket-integration' ); ?></p>
@@ -160,7 +161,7 @@ class MyIES_Sustaining_Company_Select {
 						<option value="__new"><?php esc_html_e( '— Add a new organization —', 'wicket-integration' ); ?></option>
 					</select>
 
-					<button type="button" class="button button-primary myies-sustaining-confirm">
+					<button type="button" class="myies-sustaining-confirm myies-btn myies-btn-primary">
 						<?php esc_html_e( 'Confirm Organization', 'wicket-integration' ); ?>
 					</button>
 				</div>
@@ -202,7 +203,68 @@ class MyIES_Sustaining_Company_Select {
 			if (!wrap) return;
 			var nonce    = wrap.dataset.nonce;
 			var ajaxUrl  = wrap.dataset.ajaxUrl;
+			var orgConfirmed = wrap.dataset.orgConfirmed === '1';
 			var companyNonce = typeof wicketCompanyConfig !== 'undefined' ? wicketCompanyConfig.nonce : '';
+
+			// ----- SureCart checkout button gate -----
+			// Common SureCart web-component selectors for checkout/buy buttons
+			var scButtonSelectors = [
+				'sc-order-submit',
+				'sc-buy-button',
+				'sc-checkout-button',
+				'sc-product-buy-button',
+				'.sc-buy-button',
+				'[data-sc-buy-button]'
+			].join(',');
+
+			function setCheckoutButtons(enabled) {
+				var buttons = document.querySelectorAll(scButtonSelectors);
+				buttons.forEach(function(btn) {
+					if (enabled) {
+						btn.removeAttribute('disabled');
+						btn.style.opacity = '';
+						btn.style.pointerEvents = '';
+						// Remove overlay if we added one
+						var overlay = btn.parentElement ? btn.parentElement.querySelector('.myies-checkout-gate-overlay') : null;
+						if (overlay) overlay.remove();
+					} else {
+						btn.setAttribute('disabled', 'true');
+						btn.style.opacity = '0.5';
+						btn.style.pointerEvents = 'none';
+						// Add a message overlay
+						if (btn.parentElement && !btn.parentElement.querySelector('.myies-checkout-gate-overlay')) {
+							var overlay = document.createElement('div');
+							overlay.className = 'myies-checkout-gate-overlay';
+							overlay.textContent = 'Please confirm your organization above before checking out.';
+							overlay.style.cssText = 'color:#666; font-size:13px; font-style:italic; margin-top:6px;';
+							btn.parentElement.appendChild(overlay);
+						}
+					}
+				});
+			}
+
+			// Run on load, and also after a short delay (SureCart components may render late)
+			function gateCheckoutOnLoad() {
+				if (!orgConfirmed) {
+					setCheckoutButtons(false);
+				}
+			}
+			gateCheckoutOnLoad();
+			setTimeout(gateCheckoutOnLoad, 500);
+			setTimeout(gateCheckoutOnLoad, 1500);
+
+			// Also observe the DOM for late-rendered SureCart buttons
+			if (!orgConfirmed && typeof MutationObserver !== 'undefined') {
+				var observer = new MutationObserver(function(mutations) {
+					var found = document.querySelectorAll(scButtonSelectors);
+					if (found.length) {
+						setCheckoutButtons(false);
+					}
+				});
+				observer.observe(document.body, { childList: true, subtree: true });
+				// Stop observing after 10 seconds
+				setTimeout(function(){ observer.disconnect(); }, 10000);
+			}
 
 			// Toggle new-company form based on dropdown
 			var selectEl = document.getElementById('myies-sustaining-org-select');
@@ -218,6 +280,8 @@ class MyIES_Sustaining_Company_Select {
 				changeBtn.addEventListener('click', function(){
 					wrap.querySelector('.myies-sustaining-confirmed').style.display = 'none';
 					wrap.querySelector('.myies-sustaining-form').style.display = '';
+					orgConfirmed = false;
+					setCheckoutButtons(false);
 				});
 			}
 
@@ -302,9 +366,31 @@ class MyIES_Sustaining_Company_Select {
 					.then(function(r){ return r.json(); })
 					.then(function(d){
 						if (d.success) {
+							orgConfirmed = true;
+							// Enable checkout buttons
+							setCheckoutButtons(true);
+							// Stop MutationObserver if still running
+							if (typeof observer !== 'undefined') observer.disconnect();
+							// Update UI inline instead of reloading
 							showMsg(d.data.message, false);
-							// Refresh the page to show confirmed state
-							location.reload();
+							var form = wrap.querySelector('.myies-sustaining-form');
+							if (form) form.style.display = 'none';
+							// Show confirmed banner
+							var existing = wrap.querySelector('.myies-sustaining-confirmed');
+							if (existing) {
+								existing.style.display = '';
+							} else {
+								var banner = document.createElement('div');
+								banner.className = 'myies-sustaining-confirmed';
+								banner.innerHTML = '<span class="dashicons dashicons-yes-alt" style="color:green;"></span> Organization confirmed. <button type="button" class="button button-small myies-sustaining-change">Change</button>';
+								wrap.insertBefore(banner, form);
+								banner.querySelector('.myies-sustaining-change').addEventListener('click', function(){
+									banner.style.display = 'none';
+									form.style.display = '';
+									orgConfirmed = false;
+									setCheckoutButtons(false);
+								});
+							}
 						} else {
 							showMsg(d.data && d.data.message ? d.data.message : 'Error saving selection.', true);
 						}
@@ -332,6 +418,12 @@ class MyIES_Sustaining_Company_Select {
 		.myies-sustaining-search-wrap { position: relative; }
 		#myies-sustaining-search-results { position: absolute; z-index: 100; background: #fff; border: 1px solid #ccc; width: 100%; max-height: 200px; overflow-y: auto; }
 		#myies-sustaining-search-results .myies-sustaining-result-item:hover { background: #f0f0f0; }
+		/* Button styles */
+		.myies-btn { display: inline-block; padding: 10px 24px; font-size: 14px; font-weight: 600; line-height: 1.4; text-align: center; white-space: nowrap; vertical-align: middle; cursor: pointer; border: 1px solid transparent; border-radius: 4px; text-decoration: none; transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out; }
+		.myies-btn-primary { color: #fff; background-color: #0073aa; border-color: #0073aa; }
+		.myies-btn-primary:hover { background-color: #005a87; border-color: #005a87; color: #fff; }
+		.myies-btn-primary:focus { outline: 2px solid #0073aa; outline-offset: 2px; }
+		.myies-sustaining-confirm { margin-top: 4px; }
 		</style>
 		<?php
 	}
