@@ -368,13 +368,13 @@ function wicket_render_updates_tab() {
             <?php submit_button(__('Save Repository', 'wicket-integration'), 'secondary'); ?>
         </form>
 
-        <h3><?php esc_html_e('Creating Releases', 'wicket-integration'); ?></h3>
+        <h3><?php esc_html_e('Deploying Updates', 'wicket-integration'); ?></h3>
         <ol>
-            <li><?php esc_html_e('Update version number in myies-integration.php header', 'wicket-integration'); ?></li>
-            <li><?php esc_html_e('Commit and push changes to GitHub', 'wicket-integration'); ?></li>
-            <li><?php esc_html_e('Create a new GitHub Release with matching tag (e.g., v1.0.1)', 'wicket-integration'); ?></li>
-            <li><?php esc_html_e('WordPress will detect the new version within 12 hours', 'wicket-integration'); ?></li>
+            <li><?php esc_html_e('Run bin/bump-version.sh to bump, commit, and push the new version', 'wicket-integration'); ?></li>
+            <li><?php esc_html_e('Merge to main — WordPress will detect the new version within 12 hours', 'wicket-integration'); ?></li>
+            <li><?php esc_html_e('Or click "Check for updates" on the Plugins page to detect it immediately', 'wicket-integration'); ?></li>
         </ol>
+        <p class="description"><?php esc_html_e('Usage: ./bin/bump-version.sh [patch|minor|major|x.y.z]', 'wicket-integration'); ?></p>
     </div>
     <?php
 }

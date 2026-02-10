@@ -3,13 +3,8 @@
  * GitHub Plugin Updater
  *
  * Enables automatic plugin updates from a GitHub repository.
- * When you push updates to your GitHub repo, WordPress will detect
- * the new version and prompt for update.
- *
- * SETUP INSTRUCTIONS:
- * 1. Create releases on GitHub with semantic versioning (e.g., v1.0.1, v1.1.0)
- * 2. The release tag should match the version in the plugin header
- * 3. Optionally create a plugin-info.json in your repo root for custom update details
+ * Detects new versions by reading the plugin header from the main branch,
+ * so any push that bumps the version triggers a WordPress update.
  *
  * @package MyIES_Integration
  * @since 1.0.0
@@ -32,6 +27,11 @@ class MyIES_GitHub_Updater {
     private $github_repo = '';
 
     /**
+     * Default branch name
+     */
+    private $branch = 'main';
+
+    /**
      * Plugin slug
      */
     private $plugin_slug = '';
@@ -47,9 +47,9 @@ class MyIES_GitHub_Updater {
     private $current_version = '';
 
     /**
-     * GitHub API response cache
+     * Cached remote data
      */
-    private $github_response = null;
+    private $remote_data = null;
 
     /**
      * Cache expiration in seconds (12 hours)
@@ -78,6 +78,7 @@ class MyIES_GitHub_Updater {
      *                      - github_repo: 'owner/repository-name' (required)
      *                      - plugin_file: __FILE__ from main plugin (required)
      *                      - access_token: GitHub token for private repos (optional)
+     *                      - branch: branch to track, defaults to 'main' (optional)
      */
     public function init($config) {
         if (empty($config['github_repo']) || empty($config['plugin_file'])) {
@@ -92,6 +93,10 @@ class MyIES_GitHub_Updater {
 
         if (!empty($config['access_token'])) {
             $this->access_token = $config['access_token'];
+        }
+
+        if (!empty($config['branch'])) {
+            $this->branch = $config['branch'];
         }
 
         // Hook into WordPress update system
@@ -151,68 +156,157 @@ class MyIES_GitHub_Updater {
     }
 
     /**
-     * Get repository info from GitHub API
+     * Build standard headers for GitHub API requests
      */
-    private function get_github_response() {
-        // Check cache first
-        $cached = get_transient('myies_github_response');
-        if ($cached !== false) {
-            $this->github_response = $cached;
-            return $cached;
-        }
-
-        // Build API URL for latest release
-        $api_url = sprintf(
-            'https://api.github.com/repos/%s/releases/latest',
-            $this->github_repo
+    private function api_headers() {
+        $headers = array(
+            'Accept'     => 'application/vnd.github.v3+json',
+            'User-Agent' => 'WordPress/' . get_bloginfo('version') . '; ' . home_url(),
         );
 
-        $args = array(
-            'timeout' => 15,
-            'headers' => array(
-                'Accept' => 'application/vnd.github.v3+json',
-                'User-Agent' => 'WordPress/' . get_bloginfo('version') . '; ' . home_url()
-            )
-        );
-
-        // Add authentication for private repos
         if (!empty($this->access_token)) {
-            $args['headers']['Authorization'] = 'token ' . $this->access_token;
+            $headers['Authorization'] = 'token ' . $this->access_token;
         }
 
-        $response = wp_remote_get($api_url, $args);
+        return $headers;
+    }
+
+    /**
+     * Fetch the remote plugin version from the main branch.
+     *
+     * Reads myies-integration.php via the GitHub Contents API and
+     * parses the "Version:" line from the plugin header.
+     */
+    private function get_remote_version() {
+        $api_url = sprintf(
+            'https://api.github.com/repos/%s/contents/myies-integration.php?ref=%s',
+            $this->github_repo,
+            $this->branch
+        );
+
+        $response = wp_remote_get($api_url, array(
+            'timeout' => 15,
+            'headers' => $this->api_headers(),
+        ));
 
         if (is_wp_error($response)) {
-            error_log('[MyIES GitHub Updater] API request failed: ' . $response->get_error_message());
+            error_log('[MyIES GitHub Updater] Failed to fetch remote plugin file: ' . $response->get_error_message());
             return false;
         }
 
-        $status_code = wp_remote_retrieve_response_code($response);
-
-        if ($status_code !== 200) {
-            error_log('[MyIES GitHub Updater] API returned status: ' . $status_code);
+        if (wp_remote_retrieve_response_code($response) !== 200) {
+            error_log('[MyIES GitHub Updater] Remote file request returned status: ' . wp_remote_retrieve_response_code($response));
             return false;
         }
 
         $body = json_decode(wp_remote_retrieve_body($response), true);
 
-        if (empty($body) || !isset($body['tag_name'])) {
-            error_log('[MyIES GitHub Updater] Invalid API response');
+        if (empty($body['content'])) {
+            error_log('[MyIES GitHub Updater] Remote file has no content');
             return false;
         }
 
-        // Cache for 12 hours
-        set_transient('myies_github_response', $body, $this->cache_expiration);
+        // GitHub returns base64-encoded content
+        $file_content = base64_decode($body['content']);
 
-        $this->github_response = $body;
-        return $body;
+        // Parse "Version: x.y.z" from the plugin header block
+        if (preg_match('/^\s*\*?\s*Version:\s*(.+)$/mi', $file_content, $matches)) {
+            return trim($matches[1]);
+        }
+
+        error_log('[MyIES GitHub Updater] Could not parse version from remote file');
+        return false;
     }
 
     /**
-     * Parse version from tag name (removes 'v' prefix if present)
+     * Optionally fetch the latest release for changelog info.
+     * Returns null if no release exists (this is fine).
      */
-    private function parse_version($tag_name) {
-        return ltrim($tag_name, 'vV');
+    private function get_latest_release() {
+        $api_url = sprintf(
+            'https://api.github.com/repos/%s/releases/latest',
+            $this->github_repo
+        );
+
+        $response = wp_remote_get($api_url, array(
+            'timeout' => 10,
+            'headers' => $this->api_headers(),
+        ));
+
+        if (is_wp_error($response) || wp_remote_retrieve_response_code($response) !== 200) {
+            return null;
+        }
+
+        return json_decode(wp_remote_retrieve_body($response), true);
+    }
+
+    /**
+     * Get combined remote data (version from branch, changelog from release).
+     * Result is cached for 12 hours.
+     */
+    private function get_remote_data() {
+        // Return in-memory cache
+        if ($this->remote_data !== null) {
+            return $this->remote_data;
+        }
+
+        // Check transient cache
+        $cached = get_transient('myies_github_response');
+        if ($cached !== false) {
+            $this->remote_data = $cached;
+            return $cached;
+        }
+
+        // 1. Read version from the branch
+        $remote_version = $this->get_remote_version();
+        if (!$remote_version) {
+            return false;
+        }
+
+        // 2. Build download URL (zipball of the tracked branch)
+        $download_url = sprintf(
+            'https://api.github.com/repos/%s/zipball/%s',
+            $this->github_repo,
+            $this->branch
+        );
+
+        // Add auth for private repos
+        if (!empty($this->access_token)) {
+            $download_url = add_query_arg('access_token', $this->access_token, $download_url);
+        }
+
+        // 3. Assemble response
+        $data = array(
+            'version'      => $remote_version,
+            'download_url' => $download_url,
+            'url'          => sprintf('https://github.com/%s', $this->github_repo),
+            'changelog'    => '',
+            'published_at' => '',
+        );
+
+        // 4. Try to enrich with release info (changelog, assets)
+        $release = $this->get_latest_release();
+        if ($release) {
+            $data['changelog']    = $release['body'] ?? '';
+            $data['published_at'] = $release['published_at'] ?? '';
+
+            // Prefer a zip asset from the release if the release version matches
+            $release_version = ltrim($release['tag_name'] ?? '', 'vV');
+            if ($release_version === $remote_version && !empty($release['assets'])) {
+                foreach ($release['assets'] as $asset) {
+                    if (strpos($asset['name'], '.zip') !== false) {
+                        $data['download_url'] = $asset['browser_download_url'];
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Cache for 12 hours
+        set_transient('myies_github_response', $data, $this->cache_expiration);
+        $this->remote_data = $data;
+
+        return $data;
     }
 
     /**
@@ -223,46 +317,24 @@ class MyIES_GitHub_Updater {
             return $transient;
         }
 
-        $github_response = $this->get_github_response();
-
-        if (!$github_response) {
+        $remote = $this->get_remote_data();
+        if (!$remote) {
             return $transient;
         }
 
-        $latest_version = $this->parse_version($github_response['tag_name']);
-
-        // Compare versions
-        if (version_compare($latest_version, $this->current_version, '>')) {
-            // Get download URL (prefer zipball_url for the full repo)
-            $download_url = $github_response['zipball_url'];
-
-            // Check if there's a specific asset (e.g., myies-integration.zip)
-            if (!empty($github_response['assets'])) {
-                foreach ($github_response['assets'] as $asset) {
-                    if (strpos($asset['name'], '.zip') !== false) {
-                        $download_url = $asset['browser_download_url'];
-                        break;
-                    }
-                }
-            }
-
-            // Add auth token to download URL if private repo
-            if (!empty($this->access_token)) {
-                $download_url = add_query_arg('access_token', $this->access_token, $download_url);
-            }
-
+        if (version_compare($remote['version'], $this->current_version, '>')) {
             $transient->response[$this->plugin_basename] = (object) array(
-                'slug' => $this->plugin_slug,
-                'plugin' => $this->plugin_basename,
-                'new_version' => $latest_version,
-                'url' => $github_response['html_url'],
-                'package' => $download_url,
-                'icons' => array(),
-                'banners' => array(),
-                'banners_rtl' => array(),
-                'tested' => '',
+                'slug'         => $this->plugin_slug,
+                'plugin'       => $this->plugin_basename,
+                'new_version'  => $remote['version'],
+                'url'          => $remote['url'],
+                'package'      => $remote['download_url'],
+                'icons'        => array(),
+                'banners'      => array(),
+                'banners_rtl'  => array(),
+                'tested'       => '',
                 'requires_php' => '7.4',
-                'compatibility' => new stdClass()
+                'compatibility' => new stdClass(),
             );
         }
 
@@ -281,49 +353,32 @@ class MyIES_GitHub_Updater {
             return $result;
         }
 
-        $github_response = $this->get_github_response();
-
-        if (!$github_response) {
+        $remote = $this->get_remote_data();
+        if (!$remote) {
             return $result;
         }
 
-        $latest_version = $this->parse_version($github_response['tag_name']);
-
-        // Get download URL
-        $download_url = $github_response['zipball_url'];
-        if (!empty($github_response['assets'])) {
-            foreach ($github_response['assets'] as $asset) {
-                if (strpos($asset['name'], '.zip') !== false) {
-                    $download_url = $asset['browser_download_url'];
-                    break;
-                }
-            }
-        }
-
-        // Build plugin info object
-        $plugin_info = (object) array(
-            'name' => 'MyIES Integration',
-            'slug' => $this->plugin_slug,
-            'version' => $latest_version,
-            'author' => '<a href="https://s-fx.com">S-FX</a>',
-            'author_profile' => 'https://s-fx.com',
-            'homepage' => 'https://github.com/' . $this->github_repo,
+        return (object) array(
+            'name'              => 'MyIES Integration',
+            'slug'              => $this->plugin_slug,
+            'version'           => $remote['version'],
+            'author'            => '<a href="https://s-fx.com">S-FX</a>',
+            'author_profile'    => 'https://s-fx.com',
+            'homepage'          => 'https://github.com/' . $this->github_repo,
             'short_description' => 'Comprehensive integration between Wicket CRM and WordPress with Paid Memberships Pro support.',
-            'sections' => array(
-                'description' => $this->get_plugin_description(),
-                'changelog' => $this->parse_changelog($github_response['body'] ?? ''),
-                'installation' => $this->get_installation_instructions()
+            'sections'          => array(
+                'description'  => $this->get_plugin_description(),
+                'changelog'    => $this->parse_changelog($remote['changelog']),
+                'installation' => $this->get_installation_instructions(),
             ),
-            'download_link' => $download_url,
-            'requires' => '5.8',
-            'tested' => get_bloginfo('version'),
-            'requires_php' => '7.4',
-            'last_updated' => $github_response['published_at'] ?? '',
-            'downloaded' => 0,
-            'active_installs' => 0
+            'download_link'     => $remote['download_url'],
+            'requires'          => '5.8',
+            'tested'            => get_bloginfo('version'),
+            'requires_php'      => '7.4',
+            'last_updated'      => $remote['published_at'],
+            'downloaded'        => 0,
+            'active_installs'   => 0,
         );
-
-        return $plugin_info;
     }
 
     /**
@@ -340,7 +395,7 @@ class MyIES_GitHub_Updater {
                 <li>Bulk user synchronization</li>
                 <li>ACF field group support</li>
             </ul>
-            <p>Updates are provided via GitHub releases.</p>
+            <p>Updates are detected automatically when a new version is pushed to the main branch.</p>
         ';
     }
 
@@ -364,7 +419,7 @@ class MyIES_GitHub_Updater {
      */
     private function parse_changelog($release_body) {
         if (empty($release_body)) {
-            return '<p>See GitHub releases for full changelog.</p>';
+            return '<p>See the <a href="https://github.com/' . esc_attr($this->github_repo) . '/commits/' . esc_attr($this->branch) . '">commit history</a> for details.</p>';
         }
 
         // Convert markdown to basic HTML
@@ -421,15 +476,13 @@ function myies_init_github_updater() {
     $github_repo = get_option('myies_github_repo', 'Illuminating-Engineering-Society/MyIES');
 
     $updater->init(array(
-        'github_repo' => $github_repo,
-        'plugin_file' => WICKET_INTEGRATION_PLUGIN_FILE,
-        'access_token' => $access_token
+        'github_repo'  => $github_repo,
+        'plugin_file'  => WICKET_INTEGRATION_PLUGIN_FILE,
+        'access_token' => $access_token,
+        'branch'       => 'main',
     ));
 }
 add_action('admin_init', 'myies_init_github_updater');
-
-// GitHub settings are now integrated into the unified settings page
-// in class-wicket-settings-page.php under the "Updates" tab
 
 /**
  * Show admin notice after manual update check
