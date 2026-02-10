@@ -989,6 +989,120 @@ class Wicket_API_Helper {
             'status_code' => $code
         );
     }
+
+    // =========================================================================
+    // Organization Management helpers
+    // =========================================================================
+
+    /**
+     * Get all person-to-organization connections for an organization.
+     * Includes the person sideload so we get names/emails.
+     *
+     * @param string $org_uuid Organization UUID
+     * @return array Connection records with person data attached
+     */
+    public function get_organization_members($org_uuid) {
+        if (empty($org_uuid)) {
+            return array();
+        }
+
+        $token = $this->generate_jwt_token();
+        if (is_wp_error($token)) {
+            return array();
+        }
+
+        $endpoint = $this->get_api_url() . '/organizations/' . $org_uuid
+                  . '/connections?filter[connection_type_eq]=person_to_organization&include=from&page[size]=200';
+
+        $response = wp_remote_get($endpoint, array(
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type'  => 'application/json',
+                'Accept'        => 'application/json',
+            ),
+            'timeout' => 30,
+        ));
+
+        if (is_wp_error($response)) {
+            error_log('[Wicket API Helper] Failed to get org members: ' . $response->get_error_message());
+            return array();
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        // Build a lookup of included person data
+        $people = array();
+        if (!empty($body['included'])) {
+            foreach ($body['included'] as $inc) {
+                if (($inc['type'] ?? '') === 'people') {
+                    $people[$inc['id']] = $inc;
+                }
+            }
+        }
+
+        // Merge person data into each connection
+        $connections = $body['data'] ?? array();
+        foreach ($connections as &$conn) {
+            $person_uuid = $conn['relationships']['from']['data']['id'] ?? null;
+            if ($person_uuid && isset($people[$person_uuid])) {
+                $conn['_person'] = $people[$person_uuid];
+            }
+        }
+
+        return $connections;
+    }
+
+    /**
+     * Get roles assigned to a person.
+     *
+     * @param string $person_uuid
+     * @return array Role objects from Wicket
+     */
+    public function get_person_roles($person_uuid) {
+        if (empty($person_uuid)) {
+            return array();
+        }
+
+        $token = $this->generate_jwt_token();
+        if (is_wp_error($token)) {
+            return array();
+        }
+
+        $endpoint = $this->get_api_url() . '/people/' . $person_uuid . '/roles';
+
+        $response = wp_remote_get($endpoint, array(
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type'  => 'application/json',
+                'Accept'        => 'application/json',
+            ),
+            'timeout' => 15,
+        ));
+
+        if (is_wp_error($response)) {
+            return array();
+        }
+
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+        return $body['data'] ?? array();
+    }
+
+    /**
+     * Check if a person has a specific role (by name).
+     *
+     * @param string $person_uuid
+     * @param string $role_name
+     * @return bool
+     */
+    public function person_has_role($person_uuid, $role_name) {
+        $roles = $this->get_person_roles($person_uuid);
+        foreach ($roles as $role) {
+            if (($role['attributes']['name'] ?? '') === $role_name) {
+                return true;
+            }
+        }
+        return false;
+    }
 }
 
 /**
