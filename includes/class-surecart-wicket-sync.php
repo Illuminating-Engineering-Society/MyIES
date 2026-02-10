@@ -14,6 +14,8 @@ if (!defined('ABSPATH')) {
     exit;
 }
 
+error_log('[SURECART-WICKET] File loaded');
+
 /**
  * Wicket API Credentials Handler
  *
