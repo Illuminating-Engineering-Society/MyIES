@@ -526,18 +526,12 @@ class SureCart_Wicket_Sync {
 }
 
 // Initialize the sync handler
-add_action('init', function() {
+add_action('plugins_loaded', function() {
     // Only initialize if SureCart is active
-    $sc_available = class_exists('\SureCart\Models\Purchase');
-    error_log('[SURECART-WICKET] Init check: SureCart Purchase class available = ' . ($sc_available ? 'YES' : 'NO'));
-
-    if ($sc_available) {
+    if (class_exists('\SureCart\Models\Purchase')) {
         SureCart_Wicket_Sync::get_instance();
-        error_log('[SURECART-WICKET] Sync handler initialized, hook registered');
-    } else {
-        error_log('[SURECART-WICKET] WARNING: SureCart not available, sync handler NOT initialized');
     }
-});
+}, 20);
 
 /**
  * Helper function to get credentials instance
