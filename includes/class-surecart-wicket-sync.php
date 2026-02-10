@@ -427,31 +427,18 @@ class SureCart_Wicket_Sync {
             }
         }
 
-        // Check if user already has a Wicket person membership UUID stored
-        $existing_person_membership_uuid = get_user_meta($user_id, 'wicket_person_membership_uuid', true);
+        // Always create a new membership for each purchase
+        error_log('[SURECART-WICKET] Creating new membership');
+        $res = $svc->create_membership(
+            $person_uuid,
+            $wicket_membership_uuid,
+            $starts_at,
+            $ends_at
+        );
 
-        if ($existing_person_membership_uuid) {
-            // Update existing membership
-            error_log('[SURECART-WICKET] Updating existing membership: ' . $existing_person_membership_uuid);
-            $res = $svc->update_membership(
-                $existing_person_membership_uuid,
-                $wicket_membership_uuid,
-                $ends_at
-            );
-        } else {
-            // Create new membership
-            error_log('[SURECART-WICKET] Creating new membership');
-            $res = $svc->create_membership(
-                $person_uuid,
-                $wicket_membership_uuid,
-                $starts_at,
-                $ends_at
-            );
-
-            if (!is_wp_error($res) && isset($res['data']['id'])) {
-                update_user_meta($user_id, 'wicket_person_membership_uuid', $res['data']['id']);
-                error_log('[SURECART-WICKET] Stored person membership UUID: ' . $res['data']['id']);
-            }
+        if (!is_wp_error($res) && isset($res['data']['id'])) {
+            update_user_meta($user_id, 'wicket_person_membership_uuid', $res['data']['id']);
+            error_log('[SURECART-WICKET] Stored person membership UUID: ' . $res['data']['id']);
         }
 
         if (is_wp_error($res)) {
@@ -510,25 +497,15 @@ class SureCart_Wicket_Sync {
             return $person_uuid;
         }
 
-        $existing_person_membership_uuid = get_user_meta($user_id, 'wicket_person_membership_uuid', true);
+        $res = $svc->create_membership(
+            $person_uuid,
+            $wicket_membership_uuid,
+            null,
+            $ends_at
+        );
 
-        if ($existing_person_membership_uuid) {
-            $res = $svc->update_membership(
-                $existing_person_membership_uuid,
-                $wicket_membership_uuid,
-                $ends_at
-            );
-        } else {
-            $res = $svc->create_membership(
-                $person_uuid,
-                $wicket_membership_uuid,
-                null,
-                $ends_at
-            );
-
-            if (!is_wp_error($res) && isset($res['data']['id'])) {
-                update_user_meta($user_id, 'wicket_person_membership_uuid', $res['data']['id']);
-            }
+        if (!is_wp_error($res) && isset($res['data']['id'])) {
+            update_user_meta($user_id, 'wicket_person_membership_uuid', $res['data']['id']);
         }
 
         if (is_wp_error($res)) {
