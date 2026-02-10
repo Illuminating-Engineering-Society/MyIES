@@ -535,17 +535,22 @@ function wicket_render_surecart_mapping_tab() {
         // Save sync enabled setting
         update_option('wicket_surecart_sync_enabled', isset($_POST['wicket_surecart_sync_enabled']) ? 1 : 0);
 
-        // Save mapping
+        // Save mapping (structured format)
         $mapping = [];
         $product_ids = $_POST['surecart_product_id'] ?? [];
         $membership_uuids = $_POST['wicket_membership_uuid'] ?? [];
+        $membership_types = $_POST['wicket_membership_type'] ?? [];
 
         foreach ($product_ids as $i => $product_id) {
             $product_id = trim($product_id);
             $uuid = trim($membership_uuids[$i] ?? '');
 
             if ($product_id && $uuid) {
-                $mapping[sanitize_text_field($product_id)] = sanitize_text_field($uuid);
+                $type = sanitize_text_field($membership_types[$i] ?? 'individual');
+                $mapping[sanitize_text_field($product_id)] = [
+                    'membership_uuid' => sanitize_text_field($uuid),
+                    'type'            => $type,
+                ];
             }
         }
 
@@ -605,21 +610,30 @@ function wicket_render_surecart_mapping_tab() {
             <h3><?php esc_html_e('Product to Membership Mapping', 'wicket-integration'); ?></h3>
             <p class="description"><?php esc_html_e('Map SureCart products to Wicket membership tier UUIDs. You can find the Wicket membership UUIDs by clicking "Test Connection & Show Memberships" on the API Configuration tab.', 'wicket-integration'); ?></p>
 
-            <table class="widefat" id="wicket-surecart-mapping-table" style="max-width: 900px; margin-top: 15px;">
+            <table class="widefat" id="wicket-surecart-mapping-table" style="max-width: 1000px; margin-top: 15px;">
                 <thead>
                     <tr>
-                        <th width="40%"><?php esc_html_e('SureCart Product', 'wicket-integration'); ?></th>
-                        <th width="50%"><?php esc_html_e('Wicket Membership UUID', 'wicket-integration'); ?></th>
+                        <th width="35%"><?php esc_html_e('SureCart Product', 'wicket-integration'); ?></th>
+                        <th width="40%"><?php esc_html_e('Wicket Membership UUID', 'wicket-integration'); ?></th>
+                        <th width="15%"><?php esc_html_e('Type', 'wicket-integration'); ?></th>
                         <th width="10%"></th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php
                     if (empty($mapping)) {
-                        $mapping = ['' => ''];
+                        $mapping = ['' => ['membership_uuid' => '', 'type' => 'individual']];
                     }
 
-                    foreach ($mapping as $product_id => $uuid):
+                    foreach ($mapping as $product_id => $entry):
+                        // Support both flat (legacy) and structured formats
+                        if (is_string($entry)) {
+                            $uuid = $entry;
+                            $type = 'individual';
+                        } else {
+                            $uuid = $entry['membership_uuid'] ?? '';
+                            $type = $entry['type'] ?? 'individual';
+                        }
                     ?>
                     <tr>
                         <td>
@@ -639,6 +653,12 @@ function wicket_render_surecart_mapping_tab() {
                         </td>
                         <td>
                             <input type="text" name="wicket_membership_uuid[]" value="<?php echo esc_attr($uuid); ?>" class="regular-text" style="width: 100%;" placeholder="<?php esc_attr_e('e.g., 550e8400-e29b-41d4-a716-446655440000', 'wicket-integration'); ?>">
+                        </td>
+                        <td>
+                            <select name="wicket_membership_type[]" style="width: 100%;">
+                                <option value="individual" <?php selected($type, 'individual'); ?>><?php esc_html_e('Individual', 'wicket-integration'); ?></option>
+                                <option value="sustaining" <?php selected($type, 'sustaining'); ?>><?php esc_html_e('Sustaining', 'wicket-integration'); ?></option>
+                            </select>
                         </td>
                         <td>
                             <button type="button" class="button wicket-remove-mapping-row">&times;</button>
