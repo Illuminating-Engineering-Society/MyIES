@@ -3,7 +3,8 @@
    ========================================================================== */
 
 .myies-orgmgmt {
-	max-width: 900px;
+	width: 100%;
+	box-sizing: border-box;
 	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
 }
 
@@ -277,4 +278,68 @@
 
 .myies-orgmgmt__error {
 	color: #a00;
+}
+
+/* ---------- Close button (Add Member panel) ---------- */
+
+.myies-orgmgmt__add {
+	position: relative;
+}
+
+.myies-orgmgmt__close-btn {
+	position: absolute;
+	top: 8px;
+	right: 8px;
+	background: none;
+	border: none;
+	font-size: 22px;
+	line-height: 1;
+	color: #888;
+	cursor: pointer;
+	padding: 4px 8px;
+	border-radius: 4px;
+	transition: color 0.15s ease, background-color 0.15s ease;
+}
+
+.myies-orgmgmt__close-btn:hover {
+	color: #333;
+	background-color: rgba(0, 0, 0, 0.06);
+}
+
+/* ---------- Pagination ---------- */
+
+.myies-orgmgmt__pagination {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	gap: 16px;
+	padding: 16px 0 4px;
+}
+
+.myies-orgmgmt__page-btn {
+	display: inline-block;
+	padding: 6px 14px;
+	font-size: 13px;
+	font-weight: 600;
+	color: #0073aa;
+	background: #fff;
+	border: 1px solid #0073aa;
+	border-radius: 4px;
+	cursor: pointer;
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.myies-orgmgmt__page-btn:hover:not(:disabled) {
+	background: #0073aa;
+	color: #fff;
+}
+
+.myies-orgmgmt__page-btn:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+.myies-orgmgmt__page-info {
+	font-size: 13px;
+	color: #555;
 }

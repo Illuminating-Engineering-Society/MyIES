@@ -265,6 +265,7 @@ class MyIES_Org_Management {
 			<?php if ( $can_manage ) : ?>
 			<!-- Add member form (hidden by default, toggled by + Add Member button) -->
 			<div class="myies-orgmgmt__add" id="myies-orgmgmt-add-section" style="display:none;">
+				<button type="button" class="myies-orgmgmt__close-btn" id="myies-orgmgmt-close-add" aria-label="<?php esc_attr_e( 'Close', 'wicket-integration' ); ?>">&times;</button>
 				<div class="myies-orgmgmt__search-wrap">
 					<input type="text" id="myies-orgmgmt-search" autocomplete="off"
 					       placeholder="<?php esc_attr_e( 'Search by email address...', 'wicket-integration' ); ?>"
