@@ -2,7 +2,7 @@
  * Organization Management — frontend logic
  *
  * Depends on the `myiesOrgMgmt` object localized by the shortcode:
- *   { ajaxUrl, nonce, orgUuid, i18n }
+ *   { ajaxUrl, nonce, orgUuid, canManage, i18n }
  */
 (function ($) {
 	'use strict';
@@ -11,7 +11,11 @@
 	var $wrap        = $('#myies-orgmgmt');
 	if (!$wrap.length || !cfg.nonce) return;
 
+	var canManage    = !!cfg.canManage;
+
 	// Cache DOM
+	var $toggleAdd    = $('#myies-orgmgmt-toggle-add');
+	var $addSection   = $('#myies-orgmgmt-add-section');
 	var $search       = $('#myies-orgmgmt-search');
 	var $results      = $('#myies-orgmgmt-search-results');
 	var $selected     = $('#myies-orgmgmt-selected');
@@ -32,6 +36,26 @@
 	// Init — load members
 	// =========================================================================
 	loadMembers();
+
+	// =========================================================================
+	// Toggle Add Member panel
+	// =========================================================================
+	$toggleAdd.on('click', function () {
+		$addSection.slideDown(200);
+		$toggleAdd.hide();
+		$search.focus();
+	});
+
+	function hideAddSection() {
+		selectedUser = null;
+		$selected.hide();
+		$search.val('').show();
+		$results.empty().hide();
+		$addMsg.hide();
+		$addSection.slideUp(200, function () {
+			$toggleAdd.show();
+		});
+	}
 
 	// =========================================================================
 	// Email search (predictive, 5+ chars)
@@ -79,11 +103,9 @@
 		$addMsg.hide();
 	});
 
-	// Cancel selection
+	// Cancel selection — collapse the entire add section
 	$cancelBtn.on('click', function () {
-		selectedUser = null;
-		$selected.hide();
-		$search.show().val('').focus();
+		hideAddSection();
 	});
 
 	// Add member
@@ -105,6 +127,8 @@
 				$selected.hide();
 				$search.show().val('');
 				loadMembers(); // refresh list
+				// Auto-hide the add section after a short delay
+				setTimeout(function () { hideAddSection(); }, 1500);
 			} else {
 				showMsg($addMsg, res.data.message || 'Error', true);
 			}
@@ -145,7 +169,8 @@
 
 		var html = '<table class="myies-orgmgmt__table">' +
 			'<thead><tr>' +
-			'<th>Name</th><th>Email</th><th>Role</th><th></th>' +
+			'<th>Name</th><th>Email</th><th>Role</th>' +
+			(canManage ? '<th></th>' : '') +
 			'</tr></thead><tbody>';
 
 		list.forEach(function (m) {
@@ -161,15 +186,18 @@
 			html += '<tr data-connection="' + escAttr(m.connection_uuid) + '">' +
 				'<td>' + escHtml(m.name) + (m.is_self ? ' <em>(you)</em>' : '') + '</td>' +
 				'<td>' + escHtml(m.email) + '</td>' +
-				'<td>' + roleStr + '</td>' +
-				'<td>';
+				'<td>' + roleStr + '</td>';
 
-			if (!m.is_self) {
-				html += '<button type="button" class="button button-small myies-orgmgmt__remove-btn" ' +
-					'data-connection="' + escAttr(m.connection_uuid) + '">Remove</button>';
+			if (canManage) {
+				html += '<td>';
+				if (!m.is_self) {
+					html += '<button type="button" class="myies-orgmgmt__btn myies-orgmgmt__btn--danger myies-orgmgmt__remove-btn" ' +
+						'data-connection="' + escAttr(m.connection_uuid) + '">Remove</button>';
+				}
+				html += '</td>';
 			}
 
-			html += '</td></tr>';
+			html += '</tr>';
 		});
 
 		html += '</tbody></table>';
@@ -190,7 +218,7 @@
 		renderMembers(filtered);
 	});
 
-	// Remove member (soft-end)
+	// Remove member (soft-end) — only available for Primary Contacts
 	$members.on('click', '.myies-orgmgmt__remove-btn', function () {
 		if (!confirm(cfg.i18n.confirm_remove)) return;
 

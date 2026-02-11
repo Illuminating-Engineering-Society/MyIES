@@ -77,11 +77,12 @@ class MyIES_Org_Management {
 	 */
 	private function check_authorization() {
 		$result = array(
-			'authorized'  => false,
-			'reason'      => '',
-			'org_uuid'    => '',
-			'person_uuid' => '',
-			'org_name'    => '',
+			'authorized'         => false,
+			'is_primary_contact' => false,
+			'reason'             => '',
+			'org_uuid'           => '',
+			'person_uuid'        => '',
+			'org_name'           => '',
 		);
 
 		if ( ! is_user_logged_in() ) {
@@ -111,25 +112,27 @@ class MyIES_Org_Management {
 		$result['org_uuid'] = $org_uuid;
 		$result['org_name'] = get_user_meta( $user_id, 'wicket_org_name', true ) ?: $org_uuid;
 
-		// 1. Check role — try Wicket roles first, fall back to connection check
+		// 1. Check role and connection
 		$api      = wicket_api();
 		$has_role = $api->person_has_role( $person_uuid, 'Company - Primary Contact' );
 
 		if ( $has_role ) {
-			error_log( '[OrgMgmt Auth] User ' . $user_id . ' authorized via Wicket role "Company - Primary Contact"' );
+			$result['is_primary_contact'] = true;
+			error_log( '[OrgMgmt Auth] User ' . $user_id . ' has Wicket role "Company - Primary Contact"' );
 		} else {
 			error_log( '[OrgMgmt Auth] User ' . $user_id . ' does NOT have Wicket role "Company - Primary Contact" — checking connections' );
+		}
 
-			// Fallback: check if the person has an active connection to this org
-			$has_role = $this->person_has_org_connection( $api, $person_uuid, $org_uuid );
+		// Check if the person has an active connection to this org (required for all users)
+		$has_connection = $this->person_has_org_connection( $api, $person_uuid, $org_uuid );
 
-			if ( $has_role ) {
-				error_log( '[OrgMgmt Auth] User ' . $user_id . ' authorized via active connection to org ' . $org_uuid );
-			} else {
-				error_log( '[OrgMgmt Auth] User ' . $user_id . ' has no active connection to org ' . $org_uuid . ' — denied' );
-				$result['reason'] = 'no_role';
-				return $result;
-			}
+		if ( $has_connection ) {
+			error_log( '[OrgMgmt Auth] User ' . $user_id . ' has active connection to org ' . $org_uuid );
+		} elseif ( ! $has_role ) {
+			// No Primary Contact role and no active connection — deny access entirely
+			error_log( '[OrgMgmt Auth] User ' . $user_id . ' has no active connection to org ' . $org_uuid . ' — denied' );
+			$result['reason'] = 'no_role';
+			return $result;
 		}
 
 		// 2. Check active org membership
@@ -199,10 +202,11 @@ class MyIES_Org_Management {
 		wp_enqueue_style( 'myies-org-management' );
 		wp_enqueue_script( 'myies-org-management' );
 		wp_localize_script( 'myies-org-management', 'myiesOrgMgmt', array(
-			'ajaxUrl' => admin_url( 'admin-ajax.php' ),
-			'nonce'   => wp_create_nonce( 'myies_orgmgmt_nonce' ),
-			'orgUuid' => $auth['org_uuid'],
-			'i18n'    => array(
+			'ajaxUrl'   => admin_url( 'admin-ajax.php' ),
+			'nonce'     => wp_create_nonce( 'myies_orgmgmt_nonce' ),
+			'orgUuid'   => $auth['org_uuid'],
+			'canManage' => $auth['is_primary_contact'],
+			'i18n'      => array(
 				'confirm_remove' => __( 'Remove this person from the organization?', 'wicket-integration' ),
 				'adding'         => __( 'Adding...', 'wicket-integration' ),
 				'removing'       => __( 'Removing...', 'wicket-integration' ),
@@ -233,7 +237,7 @@ class MyIES_Org_Management {
 				echo '<p>' . esc_html__( 'You are not associated with an organization.', 'wicket-integration' ) . '</p>';
 				break;
 			case 'no_role':
-				echo '<p>' . esc_html__( 'You do not have the required role to manage this organization. The Primary Contact role is required.', 'wicket-integration' ) . '</p>';
+				echo '<p>' . esc_html__( 'You are not connected to this organization.', 'wicket-integration' ) . '</p>';
 				break;
 			case 'no_active_membership':
 				echo '<p>' . esc_html__( 'Your organization does not have an active sustaining membership.', 'wicket-integration' ) . '</p>';
@@ -245,15 +249,21 @@ class MyIES_Org_Management {
 	}
 
 	private function render_management_ui( $auth ) {
+		$can_manage = $auth['is_primary_contact'];
 		?>
 		<div class="myies-orgmgmt" id="myies-orgmgmt" data-org="<?php echo esc_attr( $auth['org_uuid'] ); ?>">
 			<div class="myies-orgmgmt__header">
 				<h3><?php printf( esc_html__( 'Organization: %s', 'wicket-integration' ), esc_html( $auth['org_name'] ) ); ?></h3>
+				<?php if ( $can_manage ) : ?>
+					<button type="button" class="myies-orgmgmt__toggle-add-btn" id="myies-orgmgmt-toggle-add">
+						<?php esc_html_e( '+ Add Member', 'wicket-integration' ); ?>
+					</button>
+				<?php endif; ?>
 			</div>
 
-			<!-- Add member form -->
-			<div class="myies-orgmgmt__add">
-				<h4><?php esc_html_e( 'Add a Member', 'wicket-integration' ); ?></h4>
+			<?php if ( $can_manage ) : ?>
+			<!-- Add member form (hidden by default, toggled by + Add Member button) -->
+			<div class="myies-orgmgmt__add" id="myies-orgmgmt-add-section" style="display:none;">
 				<div class="myies-orgmgmt__search-wrap">
 					<input type="text" id="myies-orgmgmt-search" autocomplete="off"
 					       placeholder="<?php esc_attr_e( 'Search by email address...', 'wicket-integration' ); ?>"
@@ -270,16 +280,17 @@ class MyIES_Org_Management {
 						<select id="myies-orgmgmt-role">
 							<option value="employee"><?php esc_html_e( 'Company - Employee', 'wicket-integration' ); ?></option>
 						</select>
-						<button type="button" class="button button-primary" id="myies-orgmgmt-add-btn">
+						<button type="button" class="myies-orgmgmt__btn myies-orgmgmt__btn--primary" id="myies-orgmgmt-add-btn">
 							<?php esc_html_e( 'Add to Organization', 'wicket-integration' ); ?>
 						</button>
-						<button type="button" class="button" id="myies-orgmgmt-cancel-btn">
+						<button type="button" class="myies-orgmgmt__btn myies-orgmgmt__btn--secondary" id="myies-orgmgmt-cancel-btn">
 							<?php esc_html_e( 'Cancel', 'wicket-integration' ); ?>
 						</button>
 					</div>
 				</div>
 				<div id="myies-orgmgmt-add-message" class="myies-orgmgmt__message" style="display:none;"></div>
 			</div>
+			<?php endif; ?>
 
 			<!-- Members list -->
 			<div class="myies-orgmgmt__list">
@@ -371,8 +382,8 @@ class MyIES_Org_Management {
 	public function ajax_search_users() {
 		check_ajax_referer( 'myies_orgmgmt_nonce', 'nonce' );
 		$auth = $this->check_authorization();
-		if ( ! $auth['authorized'] ) {
-			wp_send_json_error( array( 'message' => 'Unauthorized' ) );
+		if ( ! $auth['authorized'] || ! $auth['is_primary_contact'] ) {
+			wp_send_json_error( array( 'message' => 'Unauthorized — Primary Contact role required.' ) );
 		}
 
 		$email = isset( $_POST['email'] ) ? sanitize_text_field( $_POST['email'] ) : '';
@@ -410,8 +421,8 @@ class MyIES_Org_Management {
 	public function ajax_add_member() {
 		check_ajax_referer( 'myies_orgmgmt_nonce', 'nonce' );
 		$auth = $this->check_authorization();
-		if ( ! $auth['authorized'] ) {
-			wp_send_json_error( array( 'message' => 'Unauthorized' ) );
+		if ( ! $auth['authorized'] || ! $auth['is_primary_contact'] ) {
+			wp_send_json_error( array( 'message' => 'Unauthorized — Primary Contact role required.' ) );
 		}
 
 		$wp_user_id = isset( $_POST['user_id'] ) ? (int) $_POST['user_id'] : 0;
@@ -461,8 +472,8 @@ class MyIES_Org_Management {
 	public function ajax_remove_member() {
 		check_ajax_referer( 'myies_orgmgmt_nonce', 'nonce' );
 		$auth = $this->check_authorization();
-		if ( ! $auth['authorized'] ) {
-			wp_send_json_error( array( 'message' => 'Unauthorized' ) );
+		if ( ! $auth['authorized'] || ! $auth['is_primary_contact'] ) {
+			wp_send_json_error( array( 'message' => 'Unauthorized — Primary Contact role required.' ) );
 		}
 
 		$connection_uuid = isset( $_POST['connection_uuid'] ) ? sanitize_text_field( $_POST['connection_uuid'] ) : '';
