@@ -31,6 +31,8 @@
 	var selectedUser  = null;
 	var searchTimer   = null;
 	var allMembers    = [];
+	var currentPage   = 1;
+	var perPage       = 20;
 
 	// =========================================================================
 	// Init — load members
@@ -44,6 +46,11 @@
 		$addSection.slideDown(200);
 		$toggleAdd.hide();
 		$search.focus();
+	});
+
+	// Close Add Member panel
+	$('#myies-orgmgmt-close-add').on('click', function () {
+		hideAddSection();
 	});
 
 	function hideAddSection() {
@@ -155,17 +162,35 @@
 				return;
 			}
 			allMembers = res.data.members;
-			renderMembers(allMembers);
+			renderMembers(allMembers, 1);
 		}).fail(function () {
 			$members.html('<p class="myies-orgmgmt__error">Request failed.</p>');
 		});
 	}
 
-	function renderMembers(list) {
+	function getFilteredMembers() {
+		var term = $.trim($filter.val()).toLowerCase();
+		if (!term) return allMembers;
+		return allMembers.filter(function (m) {
+			return (m.name && m.name.toLowerCase().indexOf(term) !== -1) ||
+			       (m.email && m.email.toLowerCase().indexOf(term) !== -1);
+		});
+	}
+
+	function renderMembers(list, page) {
 		if (!list.length) {
 			$members.html('<p>No members found.</p>');
 			return;
 		}
+
+		page = page || 1;
+		var totalPages = Math.ceil(list.length / perPage);
+		if (page > totalPages) page = totalPages;
+		if (page < 1) page = 1;
+		currentPage = page;
+
+		var start = (page - 1) * perPage;
+		var pageItems = list.slice(start, start + perPage);
 
 		var html = '<table class="myies-orgmgmt__table">' +
 			'<thead><tr>' +
@@ -173,7 +198,7 @@
 			(canManage ? '<th></th>' : '') +
 			'</tr></thead><tbody>';
 
-		list.forEach(function (m) {
+		pageItems.forEach(function (m) {
 			var roles = [];
 			if (m.connection_type) {
 				roles.push(formatRole(m.connection_type));
@@ -201,21 +226,33 @@
 		});
 
 		html += '</tbody></table>';
+
+		// Pagination controls
+		if (totalPages > 1) {
+			html += '<div class="myies-orgmgmt__pagination">';
+			html += '<button type="button" class="myies-orgmgmt__page-btn" data-page="' + (page - 1) + '"' +
+				(page <= 1 ? ' disabled' : '') + '>&laquo; Prev</button>';
+			html += '<span class="myies-orgmgmt__page-info">Page ' + page + ' of ' + totalPages +
+				' (' + list.length + ' members)</span>';
+			html += '<button type="button" class="myies-orgmgmt__page-btn" data-page="' + (page + 1) + '"' +
+				(page >= totalPages ? ' disabled' : '') + '>Next &raquo;</button>';
+			html += '</div>';
+		}
+
 		$members.html(html);
 	}
 
-	// Filter members list
+	// Pagination click handler
+	$members.on('click', '.myies-orgmgmt__page-btn', function () {
+		var page = parseInt($(this).data('page'), 10);
+		if (!page) return;
+		renderMembers(getFilteredMembers(), page);
+	});
+
+	// Filter members list — searches across ALL members, resets to page 1
 	$filter.on('input', function () {
-		var term = $.trim(this.value).toLowerCase();
-		if (!term) {
-			renderMembers(allMembers);
-			return;
-		}
-		var filtered = allMembers.filter(function (m) {
-			return (m.name && m.name.toLowerCase().indexOf(term) !== -1) ||
-			       (m.email && m.email.toLowerCase().indexOf(term) !== -1);
-		});
-		renderMembers(filtered);
+		currentPage = 1;
+		renderMembers(getFilteredMembers(), 1);
 	});
 
 	// Remove member (soft-end) — only available for Primary Contacts
@@ -232,13 +269,10 @@
 			connection_uuid: connUuid
 		}, function (res) {
 			if (res.success) {
-				$btn.closest('tr').fadeOut(300, function () {
-					$(this).remove();
-					// Also remove from allMembers
-					allMembers = allMembers.filter(function (m) {
-						return m.connection_uuid !== connUuid;
-					});
+				allMembers = allMembers.filter(function (m) {
+					return m.connection_uuid !== connUuid;
 				});
+				renderMembers(getFilteredMembers(), currentPage);
 			} else {
 				alert(res.data.message || 'Error');
 				$btn.prop('disabled', false).text('Remove');
