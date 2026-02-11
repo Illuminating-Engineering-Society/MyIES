@@ -14,11 +14,100 @@
 	border-radius: 6px;
 }
 
+/* ---------- Buttons (shared base) ---------- */
+
+.myies-orgmgmt__btn {
+	display: inline-block;
+	padding: 8px 16px;
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 1.4;
+	text-align: center;
+	white-space: nowrap;
+	vertical-align: middle;
+	cursor: pointer;
+	border: 1px solid transparent;
+	border-radius: 4px;
+	transition: background-color 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.myies-orgmgmt__btn:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+/* Primary (blue) */
+.myies-orgmgmt__btn--primary {
+	background-color: #0073aa;
+	border-color: #0073aa;
+	color: #fff;
+}
+
+.myies-orgmgmt__btn--primary:hover:not(:disabled) {
+	background-color: #005d8c;
+	border-color: #005d8c;
+}
+
+/* Secondary (outline) */
+.myies-orgmgmt__btn--secondary {
+	background-color: #fff;
+	border-color: #8c8f94;
+	color: #2c3338;
+}
+
+.myies-orgmgmt__btn--secondary:hover:not(:disabled) {
+	background-color: #f0f0f1;
+	border-color: #8c8f94;
+	color: #1d2327;
+}
+
+/* Danger (red outline) */
+.myies-orgmgmt__btn--danger {
+	background-color: #fff;
+	border-color: #a00;
+	color: #a00;
+	padding: 5px 12px;
+	font-size: 13px;
+}
+
+.myies-orgmgmt__btn--danger:hover:not(:disabled) {
+	background-color: #a00;
+	color: #fff;
+}
+
 /* ---------- Header ---------- */
 
+.myies-orgmgmt__header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 20px;
+}
+
 .myies-orgmgmt__header h3 {
-	margin: 0 0 20px;
+	margin: 0;
 	font-size: 1.3em;
+}
+
+/* Toggle "+ Add Member" button in header */
+.myies-orgmgmt__toggle-add-btn {
+	display: inline-block;
+	padding: 8px 18px;
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 1.4;
+	color: #fff;
+	background-color: #0073aa;
+	border: 1px solid #0073aa;
+	border-radius: 4px;
+	cursor: pointer;
+	white-space: nowrap;
+	transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.myies-orgmgmt__toggle-add-btn:hover {
+	background-color: #005d8c;
+	border-color: #005d8c;
 }
 
 /* ---------- Add member section ---------- */
@@ -178,15 +267,6 @@
 .myies-orgmgmt__table em {
 	color: #888;
 	font-size: 0.85em;
-}
-
-.myies-orgmgmt__remove-btn {
-	color: #a00 !important;
-	border-color: #a00 !important;
-}
-
-.myies-orgmgmt__remove-btn:hover {
-	background: #ffeaea !important;
 }
 
 .myies-orgmgmt__loading,
