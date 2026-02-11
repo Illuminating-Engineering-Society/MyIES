@@ -46,6 +46,15 @@ class Lighting_Library_Shortcode {
             .grid-subs .expired-status-sub .icon i { color: #9ca3af; }
             .grid-subs .expired-status-sub .text { color: #6b7280; }
 
+            /* 2-column product grid */
+            .grid-subs--2col {
+                display: grid !important;
+                grid-template-columns: 1fr 1fr !important;
+            }
+            .grid-subs--2col .ins-grid-desc {
+                width: 100%;
+            }
+
             /* Renew button */
             .grid-subs .change-org-btn {
                 background-color: #f28c00 !important;
@@ -268,10 +277,11 @@ class MyIES_User_Products_Shortcode {
                 }
             }
 
-            // Fetch orders (same approach as the working orders shortcode).
+            // Fetch fulfilled orders.
             $orders = \SureCart\Models\Order::where([
-                'customer_ids' => [$customer->id],
-                'expand'       => ['checkout', 'checkout.line_items'],
+                'customer_ids'       => [$customer->id],
+                'fulfillment_status' => ['fulfilled'],
+                'expand'             => ['checkout', 'checkout.line_items'],
             ])->get();
 
             // Extract products from order line items.
@@ -316,7 +326,6 @@ class MyIES_User_Products_Shortcode {
                                     'description'  => $price->product->description ?? '',
                                     'purchased_at' => $order->created_at,
                                     'product_id'   => $product_id,
-                                    'product'      => $price->product,
                                 ];
                             }
                         } catch (\Exception $e) {
@@ -439,36 +448,9 @@ class MyIES_User_Products_Shortcode {
                             ? wp_trim_words($product['description'], 10, '...')
                             : __('Product access and benefits', 'wicket-integration');
 
-                        // Build renew URL from SureCart product page.
-                        $renew_url = '';
-                        $product_obj = $product['product'] ?? null;
-                        if ($product_obj && isset($product_obj->id)) {
-                            $product_posts = get_posts([
-                                'post_type'        => 'sc_product',
-                                'posts_per_page'   => 1,
-                                'post_status'      => 'publish',
-                                'meta_key'         => 'sc_id',
-                                'meta_value'       => $product_obj->id,
-                                'suppress_filters' => true,
-                            ]);
-
-                            if (!empty($product_posts)) {
-                                $renew_url = get_permalink($product_posts[0]->ID);
-                            }
-                        }
-
-                        if (empty($renew_url)) {
-                            $checkout_url = apply_filters('myies_surecart_checkout_url', home_url('/checkout/'));
-                            $renew_url    = add_query_arg([
-                                'product_id' => $product['product_id'],
-                                'renew'      => '1',
-                            ], $checkout_url);
-                        }
-
-                        $renew_url = apply_filters('myies_user_products_renew_url', $renew_url, $product);
                         ?>
 
-                        <div class="brxe-block grid-subs" data-product-id="<?php echo esc_attr($product['product_id']); ?>">
+                        <div class="brxe-block grid-subs grid-subs--2col" data-product-id="<?php echo esc_attr($product['product_id']); ?>">
 
                             <!-- Product Name & Status -->
                             <div class="brxe-block ins-grid-desc">
@@ -495,16 +477,6 @@ class MyIES_User_Products_Shortcode {
                                 </div>
                                 <div class="brxe-text-basic subs-desc">
                                     <?php echo esc_html($expiration_date); ?>
-                                </div>
-                            </div>
-
-                            <!-- Renew Button -->
-                            <div class="brxe-block ins-grid-desc">
-                                <div class="brxe-block subs-stat">
-                                    <a class="brxe-button change-org-btn bricks-button bricks-background-primary"
-                                       href="<?php echo esc_url($renew_url); ?>">
-                                        <?php esc_html_e('Renew', 'wicket-integration'); ?>
-                                    </a>
                                 </div>
                             </div>
 
