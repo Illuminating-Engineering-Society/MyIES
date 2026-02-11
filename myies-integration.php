@@ -3,7 +3,7 @@
  * Plugin Name: MyIES Integration
  * Plugin URI: https://s-fx.com
  * Description: Comprehensive integration between Wicket CRM and WordPress with Paid Memberships Pro support
- * Version: 1.0.15
+ * Version: 1.0.16
  * Author: S-FX.com Small Business Solutions
  * Author URI: https://s-fx.com
  * License: GPL v2 or later
@@ -20,7 +20,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('WICKET_INTEGRATION_VERSION', '1.0.15');
+define('WICKET_INTEGRATION_VERSION', '1.0.16');
 define('WICKET_INTEGRATION_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('WICKET_INTEGRATION_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('WICKET_INTEGRATION_PLUGIN_FILE', __FILE__);
