@@ -112,27 +112,24 @@ class MyIES_Org_Management {
 		$result['org_uuid'] = $org_uuid;
 		$result['org_name'] = get_user_meta( $user_id, 'wicket_org_name', true ) ?: $org_uuid;
 
-		// 1. Check role and connection
-		$api      = wicket_api();
-		$has_role = $api->person_has_role( $person_uuid, 'Company - Primary Contact' );
+		// 1. Check connection to the organization and determine role from connection type
+		$api        = wicket_api();
+		$connection = $this->person_has_org_connection( $api, $person_uuid, $org_uuid );
 
-		if ( $has_role ) {
-			$result['is_primary_contact'] = true;
-			error_log( '[OrgMgmt Auth] User ' . $user_id . ' has Wicket role "Company - Primary Contact"' );
-		} else {
-			error_log( '[OrgMgmt Auth] User ' . $user_id . ' does NOT have Wicket role "Company - Primary Contact" — checking connections' );
-		}
-
-		// Check if the person has an active connection to this org (required for all users)
-		$has_connection = $this->person_has_org_connection( $api, $person_uuid, $org_uuid );
-
-		if ( $has_connection ) {
-			error_log( '[OrgMgmt Auth] User ' . $user_id . ' has active connection to org ' . $org_uuid );
-		} elseif ( ! $has_role ) {
-			// No Primary Contact role and no active connection — deny access entirely
+		if ( ! $connection ) {
 			error_log( '[OrgMgmt Auth] User ' . $user_id . ' has no active connection to org ' . $org_uuid . ' — denied' );
 			$result['reason'] = 'no_role';
 			return $result;
+		}
+
+		error_log( '[OrgMgmt Auth] User ' . $user_id . ' has active connection to org ' . $org_uuid . ' with type "' . $connection['connection_type'] . '"' );
+
+		// Primary Contact is determined by the connection type on the person-org relationship
+		if ( $connection['connection_type'] === 'primary-contact' ) {
+			$result['is_primary_contact'] = true;
+			error_log( '[OrgMgmt Auth] User ' . $user_id . ' is Primary Contact (connection type)' );
+		} else {
+			error_log( '[OrgMgmt Auth] User ' . $user_id . ' connection type "' . $connection['connection_type'] . '" — read-only access' );
 		}
 
 		// 2. Check active org membership
@@ -154,10 +151,13 @@ class MyIES_Org_Management {
 	/**
 	 * Check if a person has an active connection to a specific organization.
 	 *
+	 * Returns an array with connection details on success, or false if no
+	 * active connection exists.
+	 *
 	 * @param  Wicket_API_Helper $api
 	 * @param  string            $person_uuid
 	 * @param  string            $org_uuid
-	 * @return bool
+	 * @return array|false  Array with 'connection_type' key on success, false otherwise.
 	 */
 	private function person_has_org_connection( $api, $person_uuid, $org_uuid ) {
 		$connections = $api->get_person_connections( $person_uuid );
@@ -177,8 +177,9 @@ class MyIES_Org_Management {
 				continue;
 			}
 
-			error_log( '[OrgMgmt Auth] Found active connection ' . ( $conn['id'] ?? '?' ) . ' type="' . ( $conn['attributes']['type'] ?? '' ) . '" to org ' . $org_uuid );
-			return true;
+			$conn_type = $conn['attributes']['type'] ?? '';
+			error_log( '[OrgMgmt Auth] Found active connection ' . ( $conn['id'] ?? '?' ) . ' type="' . $conn_type . '" to org ' . $org_uuid );
+			return array( 'connection_type' => $conn_type );
 		}
 
 		return false;
