@@ -1060,11 +1060,13 @@ class Wicket_API_Helper {
      */
     public function get_person_roles($person_uuid) {
         if (empty($person_uuid)) {
+            error_log('[Wicket API Helper] get_person_roles called with empty person_uuid');
             return array();
         }
 
         $token = $this->generate_jwt_token();
         if (is_wp_error($token)) {
+            error_log('[Wicket API Helper] get_person_roles JWT generation failed: ' . $token->get_error_message());
             return array();
         }
 
@@ -1080,11 +1082,24 @@ class Wicket_API_Helper {
         ));
 
         if (is_wp_error($response)) {
+            error_log('[Wicket API Helper] get_person_roles HTTP error for ' . $person_uuid . ': ' . $response->get_error_message());
             return array();
         }
 
-        $body = json_decode(wp_remote_retrieve_body($response), true);
-        return $body['data'] ?? array();
+        $status_code = wp_remote_retrieve_response_code($response);
+        $raw_body    = wp_remote_retrieve_body($response);
+        $body        = json_decode($raw_body, true);
+
+        if ($status_code < 200 || $status_code >= 300) {
+            error_log('[Wicket API Helper] get_person_roles API error for ' . $person_uuid . ' — HTTP ' . $status_code . ': ' . substr($raw_body, 0, 500));
+            return array();
+        }
+
+        $roles = $body['data'] ?? array();
+        $role_names = array_map(function ($r) { return $r['attributes']['name'] ?? '(unnamed)'; }, $roles);
+        error_log('[Wicket API Helper] get_person_roles for ' . $person_uuid . ' — found ' . count($roles) . ' role(s): ' . implode(', ', $role_names));
+
+        return $roles;
     }
 
     /**

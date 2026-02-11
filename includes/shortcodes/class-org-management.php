@@ -68,7 +68,9 @@ class MyIES_Org_Management {
 	 * Check if the current user is authorized to manage the given org.
 	 *
 	 * Requirements:
-	 *  1. User has "Company - Primary Contact" role in Wicket.
+	 *  1. User has "Company - Primary Contact" role in Wicket OR has an active
+	 *     connection to the organization (fallback for cases where the role was
+	 *     assigned outside the SureCart checkout flow).
 	 *  2. The organization has an active sustaining (org) membership.
 	 *
 	 * @return array ['authorized' => bool, 'reason' => string, 'org_uuid' => string, 'person_uuid' => string]
@@ -94,6 +96,7 @@ class MyIES_Org_Management {
 		}
 		if ( empty( $person_uuid ) ) {
 			$result['reason'] = 'no_wicket_account';
+			error_log( '[OrgMgmt Auth] User ' . $user_id . ' has no wicket_person_uuid' );
 			return $result;
 		}
 		$result['person_uuid'] = $person_uuid;
@@ -102,17 +105,31 @@ class MyIES_Org_Management {
 		$org_uuid = get_user_meta( $user_id, 'wicket_primary_org_uuid', true );
 		if ( empty( $org_uuid ) ) {
 			$result['reason'] = 'no_organization';
+			error_log( '[OrgMgmt Auth] User ' . $user_id . ' (' . $person_uuid . ') has no wicket_primary_org_uuid' );
 			return $result;
 		}
 		$result['org_uuid'] = $org_uuid;
 		$result['org_name'] = get_user_meta( $user_id, 'wicket_org_name', true ) ?: $org_uuid;
 
-		// 1. Check role
-		$api = wicket_api();
+		// 1. Check role — try Wicket roles first, fall back to connection check
+		$api      = wicket_api();
 		$has_role = $api->person_has_role( $person_uuid, 'Company - Primary Contact' );
-		if ( ! $has_role ) {
-			$result['reason'] = 'no_role';
-			return $result;
+
+		if ( $has_role ) {
+			error_log( '[OrgMgmt Auth] User ' . $user_id . ' authorized via Wicket role "Company - Primary Contact"' );
+		} else {
+			error_log( '[OrgMgmt Auth] User ' . $user_id . ' does NOT have Wicket role "Company - Primary Contact" — checking connections' );
+
+			// Fallback: check if the person has an active connection to this org
+			$has_role = $this->person_has_org_connection( $api, $person_uuid, $org_uuid );
+
+			if ( $has_role ) {
+				error_log( '[OrgMgmt Auth] User ' . $user_id . ' authorized via active connection to org ' . $org_uuid );
+			} else {
+				error_log( '[OrgMgmt Auth] User ' . $user_id . ' has no active connection to org ' . $org_uuid . ' — denied' );
+				$result['reason'] = 'no_role';
+				return $result;
+			}
 		}
 
 		// 2. Check active org membership
@@ -120,13 +137,48 @@ class MyIES_Org_Management {
 			$memberships = Wicket_Memberships::get_instance();
 			$active_org  = $memberships->get_active_org_membership( $user_id );
 			if ( empty( $active_org ) ) {
+				error_log( '[OrgMgmt Auth] User ' . $user_id . ' org ' . $org_uuid . ' has no active sustaining membership — denied' );
 				$result['reason'] = 'no_active_membership';
 				return $result;
 			}
 		}
 
 		$result['authorized'] = true;
+		error_log( '[OrgMgmt Auth] User ' . $user_id . ' fully authorized for org ' . $org_uuid );
 		return $result;
+	}
+
+	/**
+	 * Check if a person has an active connection to a specific organization.
+	 *
+	 * @param  Wicket_API_Helper $api
+	 * @param  string            $person_uuid
+	 * @param  string            $org_uuid
+	 * @return bool
+	 */
+	private function person_has_org_connection( $api, $person_uuid, $org_uuid ) {
+		$connections = $api->get_person_connections( $person_uuid );
+
+		foreach ( $connections as $conn ) {
+			// Match the target organization via the "to" relationship
+			$to_id   = $conn['relationships']['to']['data']['id'] ?? '';
+			$to_type = $conn['relationships']['to']['data']['type'] ?? '';
+
+			if ( $to_type !== 'organizations' || $to_id !== $org_uuid ) {
+				continue;
+			}
+
+			// Skip connections that have already ended
+			$ends_at = $conn['attributes']['ends_at'] ?? null;
+			if ( $ends_at && strtotime( $ends_at ) < time() ) {
+				continue;
+			}
+
+			error_log( '[OrgMgmt Auth] Found active connection ' . ( $conn['id'] ?? '?' ) . ' type="' . ( $conn['attributes']['type'] ?? '' ) . '" to org ' . $org_uuid );
+			return true;
+		}
+
+		return false;
 	}
 
 	// =========================================================================
