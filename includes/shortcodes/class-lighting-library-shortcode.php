@@ -58,7 +58,7 @@ class Lighting_Library_Shortcode {
             /* Renew button */
             .grid-subs .change-org-btn {
                 background-color: #f28c00 !important;
-                color: #000 !important;
+                color: #fff !important;
                 border-radius: 4px !important;
                 text-decoration: none !important;
             }
@@ -83,6 +83,8 @@ class Lighting_Library_Shortcode {
         $memberships = wicket_get_user_memberships($user_id);
         $match = $this->find_lighting_library_membership($memberships);
 
+        $purchase_url = 'https://ies.org/products/lighting-library/';
+
         if (!$match) {
             return '<div class="brxe-block membership-info">
                 <div class="brxe-block func-head-viewall">
@@ -91,14 +93,22 @@ class Lighting_Library_Shortcode {
                 <div class="brxe-block dash-func-container">
                     <div class="brxe-block grid-subs">
                         <div class="brxe-block ins-grid-desc">
-                            <div class="brxe-text-basic subs-desc">' . esc_html__('You do not currently have a Lighting Library membership.', 'wicket-integration') . '</div>
+                            <div class="brxe-text-basic subs-desc">' . esc_html__('You do not currently have a Lighting Library subscription.', 'wicket-integration') . '</div>
+                        </div>
+                        <div class="brxe-block ins-grid-desc">
+                            <div class="brxe-block subs-stat">
+                                <a class="brxe-button change-org-btn bricks-button bricks-background-primary"
+                                   href="' . esc_url($purchase_url) . '">'
+                                    . esc_html__('Subscribe', 'wicket-integration') .
+                                '</a>
+                            </div>
                         </div>
                     </div>
                 </div>
             </div>';
         }
 
-        return $this->render_card($match);
+        return $this->render_card($match, $purchase_url);
     }
 
     /**
@@ -122,13 +132,11 @@ class Lighting_Library_Shortcode {
     /**
      * Render the membership card
      */
-    private function render_card($m) {
+    private function render_card($m, $purchase_url) {
         $status       = $m['status'];
         $status_lower = strtolower($status);
         $is_active    = $status_lower === 'active';
         $status_class = $is_active ? 'active-status-sub' : 'expired-status-sub';
-
-        $renew_url = apply_filters('myies_lighting_library_renew_url', home_url('/checkout/'));
 
         ob_start();
         ?>
@@ -170,15 +178,17 @@ class Lighting_Library_Shortcode {
                         </div>
                     </div>
 
+                    <?php if (!$is_active) : ?>
                     <!-- Renew Button -->
                     <div class="brxe-block ins-grid-desc">
                         <div class="brxe-block subs-stat">
                             <a class="brxe-button change-org-btn bricks-button bricks-background-primary"
-                               href="<?php echo esc_url($renew_url); ?>">
+                               href="<?php echo esc_url($purchase_url); ?>">
                                 <?php esc_html_e('Renew', 'wicket-integration'); ?>
                             </a>
                         </div>
                     </div>
+                    <?php endif; ?>
 
                 </div>
             </div>
