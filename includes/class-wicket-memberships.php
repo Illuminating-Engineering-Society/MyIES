@@ -541,8 +541,8 @@ class Wicket_Memberships {
 {wicket_membership:has_org_active}</pre>
                 
                 <h4>Shortcodes</h4>
-                <pre style="background:#f5f5f5;padding:10px;font-size:11px;">[wicket_membership_history type="person"]
-[wicket_membership_history type="organization"]</pre>
+                <pre style="background:#f5f5f5;padding:10px;font-size:11px;">[wicket_individual_membership_history]
+[wicket_org_membership_history]</pre>
             </div>
         </div>
         <?php

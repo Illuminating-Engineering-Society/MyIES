@@ -1,13 +1,13 @@
 <?php
 /**
- * Wicket Membership History Shortcode
- * 
- * Displays membership history in a table format.
- * 
+ * Wicket Membership History Shortcodes
+ *
+ * Displays membership history using Bricks grid style with renewal buttons.
+ *
  * Usage:
- *   [wicket_membership_history type="person"]
- *   [wicket_membership_history type="organization"]
- * 
+ *   [wicket_individual_membership_history]
+ *   [wicket_org_membership_history]
+ *
  * @package MyIES_Integration
  * @since 1.0.4
  */
@@ -17,126 +17,253 @@ if (!defined('ABSPATH')) {
 }
 
 class Wicket_Membership_History_Shortcode {
-    
+
     private static $instance = null;
-    
+
+    /**
+     * Renewal URLs keyed by Wicket membership_tier_name.
+     */
+    private $individual_renew_urls = [
+        'Student'                => 'https://ies.org/products/student-member/',
+        'Emerging Professional'  => 'https://ies.org/products/emerging-professional/',
+        'Member Grade'           => 'https://ies.org/products/professional-membership/',
+    ];
+
+    private $org_renew_urls = [
+        'Champion'    => 'https://ies.org/products/membership-diamond/',
+        'Ambassador'  => 'https://ies.org/products/membership-platinum/',
+        'Benefactor'  => 'https://ies.org/products/membership-gold/',
+        'Supporter'   => 'https://ies.org/products/membership-silver/',
+        'Contributor' => 'https://ies.org/products/membership-bronze/',
+    ];
+
     public static function get_instance() {
         if (self::$instance === null) {
             self::$instance = new self();
         }
         return self::$instance;
     }
-    
+
     private function __construct() {
-        add_shortcode('wicket_membership_history', [$this, 'render_shortcode']);
+        add_shortcode('wicket_individual_membership_history', [$this, 'render_individual']);
+        add_shortcode('wicket_org_membership_history', [$this, 'render_org']);
     }
-    
+
     /**
-     * Render the shortcode
+     * Get user ID from shortcode attributes.
      */
-    public function render_shortcode($atts) {
+    private function get_user_id($atts) {
         $atts = shortcode_atts([
-            'type' => 'person', // 'person' or 'organization'
             'user_id' => null,
         ], $atts);
-        
-        $user_id = $atts['user_id'] ? intval($atts['user_id']) : get_current_user_id();
-        
+
+        return $atts['user_id'] ? intval($atts['user_id']) : get_current_user_id();
+    }
+
+    /**
+     * Check if a membership should show a renew button.
+     *
+     * Returns true when the membership is expired or expires within 1 month.
+     */
+    private function should_show_renew($membership) {
+        if (empty($membership['ends_at'])) {
+            return false;
+        }
+
+        $ends_at = strtotime($membership['ends_at']);
+        $one_month_from_now = strtotime('+1 month');
+
+        return $ends_at <= $one_month_from_now;
+    }
+
+    /**
+     * Shortcode: [wicket_individual_membership_history]
+     */
+    public function render_individual($atts) {
+        $user_id = $this->get_user_id($atts);
+
         if (!$user_id) {
             return '<p class="wicket-membership-message">Please log in to view membership history.</p>';
         }
-        
-        $type = sanitize_text_field($atts['type']);
-        
-        if ($type === 'organization' || $type === 'org') {
-            $memberships = wicket_get_user_org_memberships($user_id);
-            return $this->render_org_table($memberships);
-        } else {
-            $memberships = wicket_get_user_person_memberships($user_id);
-            return $this->render_person_table($memberships);
-        }
+
+        $memberships = wicket_get_user_person_memberships($user_id);
+        return $this->render_person_grid($memberships);
     }
-    
+
     /**
-     * Render person membership history table
+     * Shortcode: [wicket_org_membership_history]
      */
-    private function render_person_table($memberships) {
-        if (empty($memberships)) {
-            return '<p class="wicket-membership-message wicket-membership-message--empty">No membership history found.</p>';
+    public function render_org($atts) {
+        $user_id = $this->get_user_id($atts);
+
+        if (!$user_id) {
+            return '<p class="wicket-membership-message">Please log in to view membership history.</p>';
         }
-        
+
+        $memberships = wicket_get_user_org_memberships($user_id);
+        return $this->render_org_grid($memberships);
+    }
+
+    /**
+     * Render person membership history in Bricks grid style
+     */
+    private function render_person_grid($memberships) {
         ob_start();
         ?>
-        <table class="wicket-history-table">
-            <thead>
-                <tr>
-                    <th>Membership</th>
-                    <th>Status</th>
-                    <th>Start Date</th>
-                    <th>End Date</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($memberships as $m): ?>
-                <tr class="<?php echo !$m['is_active'] ? 'wicket-history-row--inactive' : ''; ?>">
-                    <td>
-                        <strong><?php echo esc_html($m['membership_tier_name'] ?: 'Membership'); ?></strong>
-                    </td>
-                    <td>
-                        <span class="wicket-status-badge wicket-status-badge--<?php echo esc_attr(strtolower($m['status'])); ?>">
-                            <span class="wicket-status-badge__dot"></span>
-                            <?php echo esc_html($m['status']); ?>
-                        </span>
-                    </td>
-                    <td><?php echo esc_html($m['starts_formatted']); ?></td>
-                    <td><?php echo esc_html($m['expires_formatted']); ?></td>
-                </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+        <div class="brxe-block membership-info">
+            <div class="brxe-block func-head-viewall">
+                <h3 class="brxe-heading current-section">
+                    <?php esc_html_e('Individual Membership', 'wicket-integration'); ?>
+                </h3>
+            </div>
+
+            <div class="brxe-block dash-func-container">
+                <?php if (empty($memberships)): ?>
+                    <div class="brxe-block grid-subs">
+                        <div class="brxe-block ins-grid-desc">
+                            <div class="brxe-text-basic subs-desc">
+                                <?php esc_html_e('No membership history found.', 'wicket-integration'); ?>
+                            </div>
+                        </div>
+                    </div>
+                <?php else: ?>
+                    <?php foreach ($memberships as $m):
+                        $status_class = $m['is_active'] ? 'active-status-sub' : 'expired-status-sub';
+                    ?>
+                        <div class="brxe-block grid-subs">
+
+                            <!-- Membership Name & Status -->
+                            <div class="brxe-block ins-grid-desc">
+                                <div class="brxe-block subs-stat">
+                                    <h3 class="brxe-heading inside-func">
+                                        <?php echo esc_html($m['membership_tier_name'] ?: 'Membership'); ?>
+                                    </h3>
+                                    <span class="brxe-text-link <?php echo esc_attr($status_class); ?>">
+                                        <span class="icon"><i class="fas fa-circle"></i></span>
+                                        <span class="text"><?php echo esc_html($m['status']); ?></span>
+                                    </span>
+                                </div>
+                                <div class="brxe-text-basic subs-desc">
+                                    <?php echo esc_html($m['starts_formatted']); ?> — <?php echo esc_html($m['expires_formatted']); ?>
+                                </div>
+                            </div>
+
+                            <!-- End Date -->
+                            <div class="brxe-block ins-grid-desc">
+                                <div class="brxe-block subs-stat">
+                                    <h3 class="brxe-heading inside-func">
+                                        <?php esc_html_e('Expires', 'wicket-integration'); ?>
+                                    </h3>
+                                </div>
+                                <div class="brxe-text-basic subs-desc">
+                                    <?php echo esc_html($m['expires_formatted']); ?>
+                                </div>
+                            </div>
+
+                            <!-- Renew Button -->
+                            <div class="brxe-block ins-grid-desc">
+                                <div class="brxe-block subs-stat">
+                                    <?php if ($this->should_show_renew($m)):
+                                        $renew_url = $this->individual_renew_urls[$m['membership_tier_name']] ?? '';
+                                        if ($renew_url):
+                                    ?>
+                                        <a class="brxe-button change-org-btn bricks-button bricks-background-primary"
+                                           href="<?php echo esc_url($renew_url); ?>">
+                                            <?php esc_html_e('Renew', 'wicket-integration'); ?>
+                                        </a>
+                                    <?php endif; endif; ?>
+                                </div>
+                            </div>
+
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </div>
         <?php
         return ob_get_clean();
     }
-    
+
     /**
-     * Render organization membership history table
+     * Render organization membership history in Bricks grid style
      */
-    private function render_org_table($memberships) {
-        if (empty($memberships)) {
-            return '<p class="wicket-membership-message wicket-membership-message--empty">No organizational membership history found.</p>';
-        }
-        
+    private function render_org_grid($memberships) {
         ob_start();
         ?>
-        <table class="wicket-history-table">
-            <thead>
-                <tr>
-                    <th>Organization</th>
-                    <th>Tier</th>
-                    <th>Status</th>
-                    <th>Slots</th>
-                    <th>End Date</th>
-                </tr>
-            </thead>
-            <tbody>
-                <?php foreach ($memberships as $m): ?>
-                <tr class="<?php echo !$m['is_active'] ? 'wicket-history-row--inactive' : ''; ?>">
-                    <td>
-                        <strong><?php echo esc_html($m['organization_name']); ?></strong>
-                    </td>
-                    <td><?php echo esc_html(wicket_get_display_membership_name($m['membership_tier_name'], 'organization')); ?></td>
-                    <td>
-                        <span class="wicket-status-badge wicket-status-badge--<?php echo esc_attr(strtolower($m['status'])); ?>">
-                            <span class="wicket-status-badge__dot"></span>
-                            <?php echo esc_html($m['status']); ?>
-                        </span>
-                    </td>
-                    <td><?php echo esc_html($m['slots_display'] ?? '—'); ?></td>
-                    <td><?php echo esc_html($m['expires_formatted']); ?></td>
-                </tr>
-                <?php endforeach; ?>
-            </tbody>
-        </table>
+        <div class="brxe-block membership-info">
+            <div class="brxe-block func-head-viewall">
+                <h3 class="brxe-heading current-section">
+                    <?php esc_html_e('Organizational Membership', 'wicket-integration'); ?>
+                </h3>
+            </div>
+
+            <div class="brxe-block dash-func-container">
+                <?php if (empty($memberships)): ?>
+                    <div class="brxe-block grid-subs">
+                        <div class="brxe-block ins-grid-desc">
+                            <div class="brxe-text-basic subs-desc">
+                                <?php esc_html_e('No organizational membership history found.', 'wicket-integration'); ?>
+                            </div>
+                        </div>
+                    </div>
+                <?php else: ?>
+                    <?php foreach ($memberships as $m):
+                        $status_class = $m['is_active'] ? 'active-status-sub' : 'expired-status-sub';
+                        $display_tier = wicket_get_display_membership_name($m['membership_tier_name'], 'organization');
+                    ?>
+                        <div class="brxe-block grid-subs">
+
+                            <!-- Organization & Tier -->
+                            <div class="brxe-block ins-grid-desc">
+                                <div class="brxe-block subs-stat">
+                                    <h3 class="brxe-heading inside-func">
+                                        <?php echo esc_html($m['organization_name']); ?>
+                                    </h3>
+                                    <span class="brxe-text-link <?php echo esc_attr($status_class); ?>">
+                                        <span class="icon"><i class="fas fa-circle"></i></span>
+                                        <span class="text"><?php echo esc_html($m['status']); ?></span>
+                                    </span>
+                                </div>
+                                <div class="brxe-text-basic subs-desc">
+                                    <?php echo esc_html($display_tier); ?>
+                                    <?php if (!empty($m['slots_display']) && $m['slots_display'] !== '—'): ?>
+                                        &middot; <?php echo esc_html($m['slots_display']); ?> <?php esc_html_e('slots', 'wicket-integration'); ?>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+
+                            <!-- End Date -->
+                            <div class="brxe-block ins-grid-desc">
+                                <div class="brxe-block subs-stat">
+                                    <h3 class="brxe-heading inside-func">
+                                        <?php esc_html_e('Expires', 'wicket-integration'); ?>
+                                    </h3>
+                                </div>
+                                <div class="brxe-text-basic subs-desc">
+                                    <?php echo esc_html($m['expires_formatted']); ?>
+                                </div>
+                            </div>
+
+                            <!-- Renew Button -->
+                            <div class="brxe-block ins-grid-desc">
+                                <div class="brxe-block subs-stat">
+                                    <?php if ($this->should_show_renew($m)):
+                                        $renew_url = $this->org_renew_urls[$m['membership_tier_name']] ?? '';
+                                        if ($renew_url):
+                                    ?>
+                                        <a class="brxe-button change-org-btn bricks-button bricks-background-primary"
+                                           href="<?php echo esc_url($renew_url); ?>">
+                                            <?php esc_html_e('Renew', 'wicket-integration'); ?>
+                                        </a>
+                                    <?php endif; endif; ?>
+                                </div>
+                            </div>
+
+                        </div>
+                    <?php endforeach; ?>
+                <?php endif; ?>
+            </div>
+        </div>
         <?php
         return ob_get_clean();
     }
