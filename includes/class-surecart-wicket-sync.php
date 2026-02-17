@@ -397,10 +397,11 @@ class Wicket_Membership_Service {
         ?string $starts_at = null,
         ?string $ends_at = null
     ) {
-        $attributes = [
-            'starts_at' => $starts_at ?: current_time('c'),
-        ];
-        if ($ends_at) {
+        $attributes = [];
+        if ($starts_at !== null) {
+            $attributes['starts_at'] = $starts_at;
+        }
+        if ($ends_at !== null) {
             $attributes['ends_at'] = $ends_at;
         }
 
@@ -411,6 +412,35 @@ class Wicket_Membership_Service {
                 'data' => [
                     'type' => 'person_memberships',
                     'id'   => $person_membership_uuid,
+                    'attributes' => $attributes,
+                ],
+            ]
+        );
+    }
+
+    /**
+     * Update an existing organization membership entry in Wicket
+     */
+    public function update_organization_membership(
+        string $org_membership_uuid,
+        ?string $starts_at = null,
+        ?string $ends_at = null
+    ) {
+        $attributes = [];
+        if ($starts_at !== null) {
+            $attributes['starts_at'] = $starts_at;
+        }
+        if ($ends_at !== null) {
+            $attributes['ends_at'] = $ends_at;
+        }
+
+        return $this->request(
+            "/organization_memberships/{$org_membership_uuid}",
+            'PATCH',
+            [
+                'data' => [
+                    'type' => 'organization_memberships',
+                    'id'   => $org_membership_uuid,
                     'attributes' => $attributes,
                 ],
             ]
@@ -441,6 +471,12 @@ class SureCart_Wicket_Sync {
     private function init_hooks() {
         // SureCart purchase hook
         add_action('surecart/purchase_created', [$this, 'handle_purchase_created'], 10, 2);
+
+        // Subscription renewal hook
+        add_action('surecart/subscription_renewed', [$this, 'handle_subscription_renewed'], 10, 2);
+
+        // Purchase revocation hook (cancellation/refund)
+        add_action('surecart/purchase_revoked', [$this, 'handle_purchase_revoked'], 10, 2);
 
         // REST API endpoint for manual/testing
         add_action('rest_api_init', [$this, 'register_rest_routes']);
@@ -506,6 +542,232 @@ class SureCart_Wicket_Sync {
         } catch (Exception $e) {
             error_log('[SURECART-WICKET] Error processing purchase: ' . $e->getMessage());
         }
+    }
+
+    /**
+     * Handle SureCart subscription renewed event.
+     *
+     * Extends the membership end date in Wicket when a subscription auto-renews.
+     */
+    public function handle_subscription_renewed($subscription, $data = []) {
+        error_log('[SURECART-WICKET] Subscription renewed event triggered');
+
+        if (!get_option('wicket_surecart_sync_enabled', 1)) {
+            error_log('[SURECART-WICKET] Sync is disabled, skipping renewal');
+            return;
+        }
+
+        try {
+            $subscription_data = \SureCart\Models\Subscription::with(['price', 'price.product', 'customer', 'current_period'])->find($subscription->id);
+
+            if (!$subscription_data) {
+                error_log('[SURECART-WICKET] Could not find subscription data for ID: ' . $subscription->id);
+                return;
+            }
+
+            $product_id = $subscription_data->price->product->id ?? null;
+            if (!$product_id) {
+                error_log('[SURECART-WICKET] No product ID found in subscription');
+                return;
+            }
+
+            error_log('[SURECART-WICKET] Renewal for product ID: ' . $product_id);
+
+            $product_mapping = Wicket_Membership_Service::get_product_mapping($product_id);
+            if (!$product_mapping) {
+                error_log('[SURECART-WICKET] Product not mapped to Wicket membership: ' . $product_id);
+                return;
+            }
+
+            $customer_email = $subscription_data->customer->email ?? null;
+            if (!$customer_email) {
+                error_log('[SURECART-WICKET] No customer email found in subscription');
+                return;
+            }
+
+            $user = get_user_by('email', $customer_email);
+            if (!$user) {
+                error_log('[SURECART-WICKET] No WordPress user found for email: ' . $customer_email);
+                return;
+            }
+
+            // Calculate new ends_at from the subscription's current period
+            $ends_at = null;
+            if (isset($subscription_data->current_period) && is_object($subscription_data->current_period)) {
+                $ends_at = isset($subscription_data->current_period->end_at)
+                    ? date('c', $subscription_data->current_period->end_at)
+                    : null;
+            }
+            if (!$ends_at && isset($subscription_data->current_period_end_at)) {
+                $ends_at = date('c', $subscription_data->current_period_end_at);
+            }
+
+            if (!$ends_at) {
+                error_log('[SURECART-WICKET] Could not determine new end date from subscription');
+                return;
+            }
+
+            error_log('[SURECART-WICKET] Renewing membership, new ends_at: ' . $ends_at);
+            $this->renew_membership_in_wicket($user->ID, $product_mapping['type'], $ends_at);
+
+        } catch (Exception $e) {
+            error_log('[SURECART-WICKET] Error processing subscription renewal: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Extend a membership's end date in Wicket upon renewal.
+     *
+     * @param int    $user_id
+     * @param string $membership_type 'individual' or 'sustaining'
+     * @param string $ends_at         New end date in ISO 8601 format
+     * @return bool
+     */
+    private function renew_membership_in_wicket($user_id, $membership_type, $ends_at) {
+        try {
+            $svc = new Wicket_Membership_Service();
+        } catch (Exception $e) {
+            error_log('[SURECART-WICKET] Failed to initialize service for renewal: ' . $e->getMessage());
+            return false;
+        }
+
+        if ($membership_type === 'sustaining') {
+            $org_membership_uuid = get_user_meta($user_id, 'wicket_org_membership_uuid', true);
+            if (empty($org_membership_uuid)) {
+                error_log('[SURECART-WICKET] No org membership UUID found for user ' . $user_id . ', cannot renew');
+                return false;
+            }
+
+            error_log('[SURECART-WICKET] Renewing org membership: ' . $org_membership_uuid);
+            $res = $svc->update_organization_membership($org_membership_uuid, null, $ends_at);
+        } else {
+            $person_membership_uuid = get_user_meta($user_id, 'wicket_person_membership_uuid', true);
+            if (empty($person_membership_uuid)) {
+                error_log('[SURECART-WICKET] No person membership UUID found for user ' . $user_id . ', cannot renew');
+                return false;
+            }
+
+            error_log('[SURECART-WICKET] Renewing person membership: ' . $person_membership_uuid);
+            $res = $svc->update_membership($person_membership_uuid, null, $ends_at);
+        }
+
+        if (is_wp_error($res)) {
+            error_log('[SURECART-WICKET] Failed to renew membership: ' . $res->get_error_message());
+            return false;
+        }
+
+        error_log('[SURECART-WICKET] Membership renewed successfully');
+
+        if (function_exists('wicket_sync_user_memberships')) {
+            wicket_sync_user_memberships($user_id);
+        }
+
+        return true;
+    }
+
+    /**
+     * Handle SureCart purchase revoked event.
+     *
+     * Deactivates the membership in Wicket by setting ends_at to now.
+     */
+    public function handle_purchase_revoked($purchase, $webhook_data = []) {
+        error_log('[SURECART-WICKET] Purchase revoked event triggered');
+
+        if (!get_option('wicket_surecart_sync_enabled', 1)) {
+            error_log('[SURECART-WICKET] Sync is disabled, skipping revocation');
+            return;
+        }
+
+        try {
+            $purchase_data = \SureCart\Models\Purchase::with(['product', 'customer'])->find($purchase->id);
+
+            if (!$purchase_data) {
+                error_log('[SURECART-WICKET] Could not find purchase data for revocation, ID: ' . $purchase->id);
+                return;
+            }
+
+            $product_id = $purchase_data->product->id ?? null;
+            if (!$product_id) {
+                error_log('[SURECART-WICKET] No product ID found in revoked purchase');
+                return;
+            }
+
+            error_log('[SURECART-WICKET] Revocation for product ID: ' . $product_id);
+
+            $product_mapping = Wicket_Membership_Service::get_product_mapping($product_id);
+            if (!$product_mapping) {
+                error_log('[SURECART-WICKET] Product not mapped to Wicket membership: ' . $product_id);
+                return;
+            }
+
+            $customer_email = $purchase_data->customer->email ?? null;
+            if (!$customer_email) {
+                error_log('[SURECART-WICKET] No customer email found in revoked purchase');
+                return;
+            }
+
+            $user = get_user_by('email', $customer_email);
+            if (!$user) {
+                error_log('[SURECART-WICKET] No WordPress user found for email: ' . $customer_email);
+                return;
+            }
+
+            $this->deactivate_membership_in_wicket($user->ID, $product_mapping['type']);
+
+        } catch (Exception $e) {
+            error_log('[SURECART-WICKET] Error processing purchase revocation: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Deactivate a membership in Wicket by setting ends_at to now.
+     *
+     * @param int    $user_id
+     * @param string $membership_type 'individual' or 'sustaining'
+     * @return bool
+     */
+    private function deactivate_membership_in_wicket($user_id, $membership_type) {
+        try {
+            $svc = new Wicket_Membership_Service();
+        } catch (Exception $e) {
+            error_log('[SURECART-WICKET] Failed to initialize service for deactivation: ' . $e->getMessage());
+            return false;
+        }
+
+        $now = current_time('c');
+
+        if ($membership_type === 'sustaining') {
+            $org_membership_uuid = get_user_meta($user_id, 'wicket_org_membership_uuid', true);
+            if (empty($org_membership_uuid)) {
+                error_log('[SURECART-WICKET] No org membership UUID found for user ' . $user_id . ', cannot deactivate');
+                return false;
+            }
+
+            error_log('[SURECART-WICKET] Deactivating org membership: ' . $org_membership_uuid);
+            $res = $svc->update_organization_membership($org_membership_uuid, null, $now);
+        } else {
+            $person_membership_uuid = get_user_meta($user_id, 'wicket_person_membership_uuid', true);
+            if (empty($person_membership_uuid)) {
+                error_log('[SURECART-WICKET] No person membership UUID found for user ' . $user_id . ', cannot deactivate');
+                return false;
+            }
+
+            error_log('[SURECART-WICKET] Deactivating person membership: ' . $person_membership_uuid);
+            $res = $svc->update_membership($person_membership_uuid, null, $now);
+        }
+
+        if (is_wp_error($res)) {
+            error_log('[SURECART-WICKET] Failed to deactivate membership: ' . $res->get_error_message());
+            return false;
+        }
+
+        error_log('[SURECART-WICKET] Membership deactivated successfully');
+
+        if (function_exists('wicket_sync_user_memberships')) {
+            wicket_sync_user_memberships($user_id);
+        }
+
+        return true;
     }
 
     /**
