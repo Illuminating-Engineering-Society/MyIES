@@ -61,6 +61,24 @@ class Wicket_Membership_History_Shortcode {
     }
 
     /**
+     * Match a tier name to its base key in a URL map using prefix matching.
+     *
+     * E.g. "Emerging Professional Year 2" matches "Emerging Professional".
+     * Returns the matched key or null.
+     */
+    private function match_tier($tier_name, $url_map) {
+        if (isset($url_map[$tier_name])) {
+            return $tier_name;
+        }
+        foreach (array_keys($url_map) as $key) {
+            if (str_starts_with($tier_name, $key)) {
+                return $key;
+            }
+        }
+        return null;
+    }
+
+    /**
      * Check if a membership should show a renew button.
      *
      * Returns true when the membership is expired or expires within 1 month.
@@ -87,6 +105,12 @@ class Wicket_Membership_History_Shortcode {
         }
 
         $memberships = wicket_get_user_person_memberships($user_id);
+
+        // Only show tiers that match a known renew URL (prefix match).
+        $memberships = array_filter($memberships, function ($m) {
+            return $this->match_tier($m['membership_tier_name'] ?? '', $this->individual_renew_urls) !== null;
+        });
+
         return $this->render_person_grid($memberships);
     }
 
@@ -101,6 +125,12 @@ class Wicket_Membership_History_Shortcode {
         }
 
         $memberships = wicket_get_user_org_memberships($user_id);
+
+        // Only show tiers that match a known renew URL (prefix match).
+        $memberships = array_filter($memberships, function ($m) {
+            return $this->match_tier($m['membership_tier_name'] ?? '', $this->org_renew_urls) !== null;
+        });
+
         return $this->render_org_grid($memberships);
     }
 
@@ -164,7 +194,8 @@ class Wicket_Membership_History_Shortcode {
                             <div class="brxe-block ins-grid-desc">
                                 <div class="brxe-block subs-stat">
                                     <?php if ($this->should_show_renew($m)):
-                                        $renew_url = $this->individual_renew_urls[$m['membership_tier_name']] ?? '';
+                                        $matched_key = $this->match_tier($m['membership_tier_name'], $this->individual_renew_urls);
+                                        $renew_url = $matched_key ? $this->individual_renew_urls[$matched_key] : '';
                                         if ($renew_url):
                                     ?>
                                         <a class="brxe-button change-org-btn bricks-button bricks-background-primary"
@@ -248,7 +279,8 @@ class Wicket_Membership_History_Shortcode {
                             <div class="brxe-block ins-grid-desc">
                                 <div class="brxe-block subs-stat">
                                     <?php if ($this->should_show_renew($m)):
-                                        $renew_url = $this->org_renew_urls[$m['membership_tier_name']] ?? '';
+                                        $matched_key = $this->match_tier($m['membership_tier_name'], $this->org_renew_urls);
+                                        $renew_url = $matched_key ? $this->org_renew_urls[$matched_key] : '';
                                         if ($renew_url):
                                     ?>
                                         <a class="brxe-button change-org-btn bricks-button bricks-background-primary"
