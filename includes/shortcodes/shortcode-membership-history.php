@@ -226,11 +226,11 @@ class Wicket_Membership_History_Shortcode {
             ?>
                 <div class="brxe-block grid-subs">
 
-                    <!-- Organization & Tier -->
+                    <!-- Tier & Organization -->
                     <div class="brxe-block ins-grid-desc">
                         <div class="brxe-block subs-stat">
                             <h3 class="brxe-heading inside-func">
-                                <?php echo esc_html($m['organization_name']); ?>
+                                <?php echo esc_html($display_tier); ?>
                             </h3>
                             <span class="brxe-text-link <?php echo esc_attr($status_class); ?>">
                                 <span class="icon"><i class="fas fa-circle"></i></span>
@@ -238,7 +238,7 @@ class Wicket_Membership_History_Shortcode {
                             </span>
                         </div>
                         <div class="brxe-text-basic subs-desc">
-                            <?php echo esc_html($display_tier); ?>
+                            <?php echo esc_html($m['organization_name']); ?>
                             <?php if (!empty($m['slots_display']) && $m['slots_display'] !== '—'): ?>
                                 &middot; <?php echo esc_html($m['slots_display']); ?> <?php esc_html_e('slots', 'wicket-integration'); ?>
                             <?php endif; ?>
