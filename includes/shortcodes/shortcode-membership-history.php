@@ -141,12 +141,6 @@ class Wicket_Membership_History_Shortcode {
         ob_start();
         ?>
         <div class="brxe-block membership-info">
-            <div class="brxe-block func-head-viewall">
-                <h3 class="brxe-heading current-section">
-                    <?php esc_html_e('Individual Membership', 'wicket-integration'); ?>
-                </h3>
-            </div>
-
             <div class="brxe-block dash-func-container">
                 <?php if (empty($memberships)): ?>
                     <div class="brxe-block grid-subs">
@@ -222,12 +216,6 @@ class Wicket_Membership_History_Shortcode {
         ob_start();
         ?>
         <div class="brxe-block membership-info">
-            <div class="brxe-block func-head-viewall">
-                <h3 class="brxe-heading current-section">
-                    <?php esc_html_e('Organizational Membership', 'wicket-integration'); ?>
-                </h3>
-            </div>
-
             <div class="brxe-block dash-func-container">
                 <?php if (empty($memberships)): ?>
                     <div class="brxe-block grid-subs">
