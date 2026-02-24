@@ -215,6 +215,10 @@ class MyIES_GitHub_Updater {
     /**
      * Inject authorization header into download requests for our GitHub repo.
      * This replaces the deprecated ?access_token= query parameter approach.
+     *
+     * Only overrides Accept to application/octet-stream for actual binary
+     * downloads (zipball, release assets). API JSON calls set their own
+     * Accept header via api_headers() and must not be overridden here.
      */
     public function inject_auth_header($args, $url) {
         if (empty($this->access_token)) {
@@ -232,7 +236,16 @@ class MyIES_GitHub_Updater {
         }
 
         $args['headers']['Authorization'] = 'Bearer ' . $this->access_token;
-        $args['headers']['Accept'] = 'application/octet-stream';
+
+        // Only set octet-stream Accept for binary download URLs, not JSON API calls.
+        // ZIP downloads come from /zipball/, /releases/download/, or /assets/ paths.
+        $is_download = strpos($url, '/zipball/') !== false
+            || strpos($url, '/releases/download/') !== false
+            || strpos($url, '/assets/') !== false;
+
+        if ($is_download) {
+            $args['headers']['Accept'] = 'application/octet-stream';
+        }
 
         return $args;
     }

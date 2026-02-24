@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 #
-# bump-version.sh — Bump the plugin version, commit, and push.
+# bump-version.sh — Bump the plugin version, commit, and push to main.
+#
+# After this script pushes to main, the GitHub Actions workflow
+# (.github/workflows/auto-release.yml) will automatically:
+#   1. Detect the new version in myies-integration.php
+#   2. Create a tagged GitHub Release (e.g. v1.0.19)
+#   3. Attach a clean plugin zip to the release
+#
+# WordPress then picks up the new release via the built-in updater
+# (includes/class-github-updater.php) within 6 hours, or immediately
+# when "Check for updates" is clicked on the Plugins page.
+#
+# For private repos, add to wp-config.php:
+#   define('MYIES_GITHUB_TOKEN', 'ghp_your_token');
 #
 # Usage:
 #   ./bin/bump-version.sh           # bumps patch  (1.0.8 → 1.0.9)
@@ -78,4 +91,10 @@ BRANCH=$(git rev-parse --abbrev-ref HEAD)
 echo "Pushing to origin/$BRANCH …"
 git push -u origin "$BRANCH"
 
+echo ""
 echo "Done — version $NEW_VERSION pushed."
+echo ""
+echo "Next steps:"
+echo "  1. Merge/push to main to trigger the Auto Release workflow."
+echo "  2. GitHub Actions will create tag v$NEW_VERSION and attach a zip."
+echo "  3. WordPress will detect the update automatically (or via 'Check for updates')."
