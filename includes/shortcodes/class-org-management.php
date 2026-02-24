@@ -2,8 +2,9 @@
 /**
  * Organization Management Shortcode
  *
- * Allows a user with "Company - Primary Contact" role and an active sustaining
- * membership to manage the people connected to their organization.
+ * Allows a user with "Company - Primary Contact" or "Sustaining Benefits Contact"
+ * role and an active sustaining membership to manage the people connected to
+ * their organization.
  *
  * Shortcode: [myies_org_management]
  *
@@ -68,21 +69,20 @@ class MyIES_Org_Management {
 	 * Check if the current user is authorized to manage the given org.
 	 *
 	 * Requirements:
-	 *  1. User has "Company - Primary Contact" role in Wicket OR has an active
-	 *     connection to the organization (fallback for cases where the role was
-	 *     assigned outside the SureCart checkout flow).
+	 *  1. User has "Company - Primary Contact" or "Sustaining Benefits Contact"
+	 *     connection type to the organization.
 	 *  2. The organization has an active sustaining (org) membership.
 	 *
-	 * @return array ['authorized' => bool, 'reason' => string, 'org_uuid' => string, 'person_uuid' => string]
+	 * @return array ['authorized' => bool, 'can_manage' => bool, 'reason' => string, 'org_uuid' => string, 'person_uuid' => string]
 	 */
 	private function check_authorization() {
 		$result = array(
-			'authorized'         => false,
-			'is_primary_contact' => false,
-			'reason'             => '',
-			'org_uuid'           => '',
-			'person_uuid'        => '',
-			'org_name'           => '',
+			'authorized'  => false,
+			'can_manage'  => false,
+			'reason'      => '',
+			'org_uuid'    => '',
+			'person_uuid' => '',
+			'org_name'    => '',
 		);
 
 		if ( ! is_user_logged_in() ) {
@@ -124,10 +124,11 @@ class MyIES_Org_Management {
 
 		error_log( '[OrgMgmt Auth] User ' . $user_id . ' has active connection to org ' . $org_uuid . ' with type "' . $connection['connection_type'] . '"' );
 
-		// Primary Contact is determined by the connection type on the person-org relationship
-		if ( $connection['connection_type'] === 'primary-contact' ) {
-			$result['is_primary_contact'] = true;
-			error_log( '[OrgMgmt Auth] User ' . $user_id . ' is Primary Contact (connection type)' );
+		// Management rights are granted to primary-contact and sustaining-benefits-contact connection types
+		$management_types = array( 'primary-contact', 'sustaining-benefits-contact' );
+		if ( in_array( $connection['connection_type'], $management_types, true ) ) {
+			$result['can_manage'] = true;
+			error_log( '[OrgMgmt Auth] User ' . $user_id . ' can manage org (connection type: ' . $connection['connection_type'] . ')' );
 		} else {
 			error_log( '[OrgMgmt Auth] User ' . $user_id . ' connection type "' . $connection['connection_type'] . '" — read-only access' );
 		}
@@ -206,7 +207,7 @@ class MyIES_Org_Management {
 			'ajaxUrl'   => admin_url( 'admin-ajax.php' ),
 			'nonce'     => wp_create_nonce( 'myies_orgmgmt_nonce' ),
 			'orgUuid'   => $auth['org_uuid'],
-			'canManage' => $auth['is_primary_contact'],
+			'canManage' => $auth['can_manage'],
 			'i18n'      => array(
 				'confirm_remove' => __( 'Remove this person from the organization?', 'wicket-integration' ),
 				'adding'         => __( 'Adding...', 'wicket-integration' ),
@@ -250,7 +251,7 @@ class MyIES_Org_Management {
 	}
 
 	private function render_management_ui( $auth ) {
-		$can_manage = $auth['is_primary_contact'];
+		$can_manage = $auth['can_manage'];
 		?>
 		<div class="myies-orgmgmt" id="myies-orgmgmt" data-org="<?php echo esc_attr( $auth['org_uuid'] ); ?>">
 			<div class="myies-orgmgmt__header">
@@ -384,8 +385,8 @@ class MyIES_Org_Management {
 	public function ajax_search_users() {
 		check_ajax_referer( 'myies_orgmgmt_nonce', 'nonce' );
 		$auth = $this->check_authorization();
-		if ( ! $auth['authorized'] || ! $auth['is_primary_contact'] ) {
-			wp_send_json_error( array( 'message' => 'Unauthorized — Primary Contact role required.' ) );
+		if ( ! $auth['authorized'] || ! $auth['can_manage'] ) {
+			wp_send_json_error( array( 'message' => 'Unauthorized — Management role required.' ) );
 		}
 
 		$email = isset( $_POST['email'] ) ? sanitize_text_field( $_POST['email'] ) : '';
@@ -423,8 +424,8 @@ class MyIES_Org_Management {
 	public function ajax_add_member() {
 		check_ajax_referer( 'myies_orgmgmt_nonce', 'nonce' );
 		$auth = $this->check_authorization();
-		if ( ! $auth['authorized'] || ! $auth['is_primary_contact'] ) {
-			wp_send_json_error( array( 'message' => 'Unauthorized — Primary Contact role required.' ) );
+		if ( ! $auth['authorized'] || ! $auth['can_manage'] ) {
+			wp_send_json_error( array( 'message' => 'Unauthorized — Management role required.' ) );
 		}
 
 		$wp_user_id = isset( $_POST['user_id'] ) ? (int) $_POST['user_id'] : 0;
@@ -474,8 +475,8 @@ class MyIES_Org_Management {
 	public function ajax_remove_member() {
 		check_ajax_referer( 'myies_orgmgmt_nonce', 'nonce' );
 		$auth = $this->check_authorization();
-		if ( ! $auth['authorized'] || ! $auth['is_primary_contact'] ) {
-			wp_send_json_error( array( 'message' => 'Unauthorized — Primary Contact role required.' ) );
+		if ( ! $auth['authorized'] || ! $auth['can_manage'] ) {
+			wp_send_json_error( array( 'message' => 'Unauthorized — Management role required.' ) );
 		}
 
 		$connection_uuid = isset( $_POST['connection_uuid'] ) ? sanitize_text_field( $_POST['connection_uuid'] ) : '';
