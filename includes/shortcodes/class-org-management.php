@@ -125,7 +125,7 @@ class MyIES_Org_Management {
 		error_log( '[OrgMgmt Auth] User ' . $user_id . ' has active connection to org ' . $org_uuid . ' with type "' . $connection['connection_type'] . '"' );
 
 		// Management rights are granted to primary-contact and sustaining-benefits-contact connection types
-		$management_types = array( 'primary-contact', 'sustaining-benefits-contact' );
+		$management_types = array( 'primary-contact', 'sustaining_benefits_contact' );
 		if ( in_array( $connection['connection_type'], $management_types, true ) ) {
 			$result['can_manage'] = true;
 			error_log( '[OrgMgmt Auth] User ' . $user_id . ' can manage org (connection type: ' . $connection['connection_type'] . ')' );
