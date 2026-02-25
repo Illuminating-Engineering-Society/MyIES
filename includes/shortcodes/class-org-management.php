@@ -2,9 +2,9 @@
 /**
  * Organization Management Shortcode
  *
- * Allows a user with "Company - Primary Contact" or "Sustaining Benefits Contact"
- * role and an active sustaining membership to manage the people connected to
- * their organization.
+ * Allows a user with a "primary-contact" or "sustaining_benefits_contact"
+ * connection type and an active sustaining membership to manage the people
+ * connected to their organization.
  *
  * Shortcode: [myies_org_management]
  *
@@ -69,7 +69,7 @@ class MyIES_Org_Management {
 	 * Check if the current user is authorized to manage the given org.
 	 *
 	 * Requirements:
-	 *  1. User has "Company - Primary Contact" or "Sustaining Benefits Contact"
+	 *  1. User has a "primary-contact" or "sustaining_benefits_contact"
 	 *     connection type to the organization.
 	 *  2. The organization has an active sustaining (org) membership.
 	 *
