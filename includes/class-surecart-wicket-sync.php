@@ -478,8 +478,8 @@ class SureCart_Wicket_Sync {
         }
 
         // Legacy single-string format — we can't know which tier it belongs to,
-        // so return it only as a fallback (caller should migrate it).
-        return $raw;
+        // so return null to avoid matching the wrong tier.
+        return null;
     }
 
     /**
@@ -519,7 +519,8 @@ class SureCart_Wicket_Sync {
             return $map[$tier_uuid] ?? null;
         }
 
-        return $raw;
+        // Legacy single-string format — return null to avoid matching the wrong tier.
+        return null;
     }
 
     /**
@@ -760,6 +761,10 @@ class SureCart_Wicket_Sync {
         if ($membership_type === 'sustaining') {
             $org_membership_uuid = self::get_org_membership_uuid($user_id, $tier_uuid);
             if (empty($org_membership_uuid)) {
+                // Legacy fallback: user meta is a plain string from before multi-tier support
+                $org_membership_uuid = get_user_meta($user_id, 'wicket_org_membership_uuid', true);
+            }
+            if (empty($org_membership_uuid)) {
                 error_log('[SURECART-WICKET] No org membership UUID found for user ' . $user_id . ' tier ' . $tier_uuid . ', cannot renew');
                 return false;
             }
@@ -768,6 +773,10 @@ class SureCart_Wicket_Sync {
             $res = $svc->update_organization_membership($org_membership_uuid, null, $ends_at);
         } else {
             $person_membership_uuid = self::get_person_membership_uuid($user_id, $tier_uuid);
+            if (empty($person_membership_uuid)) {
+                // Legacy fallback: user meta is a plain string from before multi-tier support
+                $person_membership_uuid = get_user_meta($user_id, 'wicket_person_membership_uuid', true);
+            }
             if (empty($person_membership_uuid)) {
                 error_log('[SURECART-WICKET] No person membership UUID found for user ' . $user_id . ' tier ' . $tier_uuid . ', cannot renew');
                 return false;
@@ -866,6 +875,10 @@ class SureCart_Wicket_Sync {
         if ($membership_type === 'sustaining') {
             $org_membership_uuid = self::get_org_membership_uuid($user_id, $tier_uuid);
             if (empty($org_membership_uuid)) {
+                // Legacy fallback: user meta is a plain string from before multi-tier support
+                $org_membership_uuid = get_user_meta($user_id, 'wicket_org_membership_uuid', true);
+            }
+            if (empty($org_membership_uuid)) {
                 error_log('[SURECART-WICKET] No org membership UUID found for user ' . $user_id . ' tier ' . $tier_uuid . ', cannot deactivate');
                 return false;
             }
@@ -874,6 +887,10 @@ class SureCart_Wicket_Sync {
             $res = $svc->update_organization_membership($org_membership_uuid, null, $now);
         } else {
             $person_membership_uuid = self::get_person_membership_uuid($user_id, $tier_uuid);
+            if (empty($person_membership_uuid)) {
+                // Legacy fallback: user meta is a plain string from before multi-tier support
+                $person_membership_uuid = get_user_meta($user_id, 'wicket_person_membership_uuid', true);
+            }
             if (empty($person_membership_uuid)) {
                 error_log('[SURECART-WICKET] No person membership UUID found for user ' . $user_id . ' tier ' . $tier_uuid . ', cannot deactivate');
                 return false;
