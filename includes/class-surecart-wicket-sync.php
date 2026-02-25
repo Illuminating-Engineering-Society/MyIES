@@ -455,6 +455,131 @@ class Wicket_Membership_Service {
  */
 class SureCart_Wicket_Sync {
 
+    /**
+     * Get the person_membership UUID for a specific membership tier.
+     *
+     * The meta value is stored as a JSON map: { tier_uuid => person_membership_uuid }.
+     * Legacy single-string values are migrated on read.
+     *
+     * @param int    $user_id
+     * @param string $tier_uuid  The Wicket membership tier UUID to look up.
+     * @return string|null  The person_membership UUID, or null if none exists for this tier.
+     */
+    private static function get_person_membership_uuid(int $user_id, string $tier_uuid): ?string {
+        $raw = get_user_meta($user_id, 'wicket_person_membership_uuid', true);
+        if (empty($raw)) {
+            return null;
+        }
+
+        // New JSON map format
+        $map = json_decode($raw, true);
+        if (is_array($map)) {
+            return $map[$tier_uuid] ?? null;
+        }
+
+        // Legacy single-string format — we can't know which tier it belongs to,
+        // so return it only as a fallback (caller should migrate it).
+        return $raw;
+    }
+
+    /**
+     * Store the person_membership UUID for a specific membership tier.
+     *
+     * Merges into the existing JSON map, migrating legacy single-string values.
+     */
+    private static function set_person_membership_uuid(int $user_id, string $tier_uuid, string $person_membership_uuid): void {
+        $raw = get_user_meta($user_id, 'wicket_person_membership_uuid', true);
+        $map = [];
+
+        if (!empty($raw)) {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                $map = $decoded;
+            } else {
+                // Legacy single-string: preserve it under a special key so it isn't lost
+                $map['_legacy'] = $raw;
+            }
+        }
+
+        $map[$tier_uuid] = $person_membership_uuid;
+        update_user_meta($user_id, 'wicket_person_membership_uuid', wp_json_encode($map));
+    }
+
+    /**
+     * Get the org_membership UUID for a specific membership tier.
+     */
+    private static function get_org_membership_uuid(int $user_id, string $tier_uuid): ?string {
+        $raw = get_user_meta($user_id, 'wicket_org_membership_uuid', true);
+        if (empty($raw)) {
+            return null;
+        }
+
+        $map = json_decode($raw, true);
+        if (is_array($map)) {
+            return $map[$tier_uuid] ?? null;
+        }
+
+        return $raw;
+    }
+
+    /**
+     * Store the org_membership UUID for a specific membership tier.
+     */
+    private static function set_org_membership_uuid(int $user_id, string $tier_uuid, string $org_membership_uuid): void {
+        $raw = get_user_meta($user_id, 'wicket_org_membership_uuid', true);
+        $map = [];
+
+        if (!empty($raw)) {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                $map = $decoded;
+            } else {
+                $map['_legacy'] = $raw;
+            }
+        }
+
+        $map[$tier_uuid] = $org_membership_uuid;
+        update_user_meta($user_id, 'wicket_org_membership_uuid', wp_json_encode($map));
+    }
+
+    /**
+     * Get ALL person_membership UUIDs for a user (across all tiers).
+     * Used by renewal/deactivation when we need to find by type rather than tier.
+     *
+     * @return array  Map of tier_uuid => person_membership_uuid
+     */
+    private static function get_all_person_membership_uuids(int $user_id): array {
+        $raw = get_user_meta($user_id, 'wicket_person_membership_uuid', true);
+        if (empty($raw)) {
+            return [];
+        }
+
+        $map = json_decode($raw, true);
+        if (is_array($map)) {
+            return $map;
+        }
+
+        // Legacy single-string
+        return ['_legacy' => $raw];
+    }
+
+    /**
+     * Get ALL org_membership UUIDs for a user (across all tiers).
+     */
+    private static function get_all_org_membership_uuids(int $user_id): array {
+        $raw = get_user_meta($user_id, 'wicket_org_membership_uuid', true);
+        if (empty($raw)) {
+            return [];
+        }
+
+        $map = json_decode($raw, true);
+        if (is_array($map)) {
+            return $map;
+        }
+
+        return ['_legacy' => $raw];
+    }
+
     private static $instance = null;
 
     public static function get_instance() {
@@ -608,7 +733,7 @@ class SureCart_Wicket_Sync {
             }
 
             error_log('[SURECART-WICKET] Renewing membership, new ends_at: ' . $ends_at);
-            $this->renew_membership_in_wicket($user->ID, $product_mapping['type'], $ends_at);
+            $this->renew_membership_in_wicket($user->ID, $product_mapping['type'], $product_mapping['membership_uuid'], $ends_at);
 
         } catch (Exception $e) {
             error_log('[SURECART-WICKET] Error processing subscription renewal: ' . $e->getMessage());
@@ -620,10 +745,11 @@ class SureCart_Wicket_Sync {
      *
      * @param int    $user_id
      * @param string $membership_type 'individual' or 'sustaining'
+     * @param string $tier_uuid       Wicket membership tier UUID
      * @param string $ends_at         New end date in ISO 8601 format
      * @return bool
      */
-    private function renew_membership_in_wicket($user_id, $membership_type, $ends_at) {
+    private function renew_membership_in_wicket($user_id, $membership_type, $tier_uuid, $ends_at) {
         try {
             $svc = new Wicket_Membership_Service();
         } catch (Exception $e) {
@@ -632,22 +758,22 @@ class SureCart_Wicket_Sync {
         }
 
         if ($membership_type === 'sustaining') {
-            $org_membership_uuid = get_user_meta($user_id, 'wicket_org_membership_uuid', true);
+            $org_membership_uuid = self::get_org_membership_uuid($user_id, $tier_uuid);
             if (empty($org_membership_uuid)) {
-                error_log('[SURECART-WICKET] No org membership UUID found for user ' . $user_id . ', cannot renew');
+                error_log('[SURECART-WICKET] No org membership UUID found for user ' . $user_id . ' tier ' . $tier_uuid . ', cannot renew');
                 return false;
             }
 
-            error_log('[SURECART-WICKET] Renewing org membership: ' . $org_membership_uuid);
+            error_log('[SURECART-WICKET] Renewing org membership: ' . $org_membership_uuid . ' (tier: ' . $tier_uuid . ')');
             $res = $svc->update_organization_membership($org_membership_uuid, null, $ends_at);
         } else {
-            $person_membership_uuid = get_user_meta($user_id, 'wicket_person_membership_uuid', true);
+            $person_membership_uuid = self::get_person_membership_uuid($user_id, $tier_uuid);
             if (empty($person_membership_uuid)) {
-                error_log('[SURECART-WICKET] No person membership UUID found for user ' . $user_id . ', cannot renew');
+                error_log('[SURECART-WICKET] No person membership UUID found for user ' . $user_id . ' tier ' . $tier_uuid . ', cannot renew');
                 return false;
             }
 
-            error_log('[SURECART-WICKET] Renewing person membership: ' . $person_membership_uuid);
+            error_log('[SURECART-WICKET] Renewing person membership: ' . $person_membership_uuid . ' (tier: ' . $tier_uuid . ')');
             $res = $svc->update_membership($person_membership_uuid, null, $ends_at);
         }
 
@@ -712,7 +838,7 @@ class SureCart_Wicket_Sync {
                 return;
             }
 
-            $this->deactivate_membership_in_wicket($user->ID, $product_mapping['type']);
+            $this->deactivate_membership_in_wicket($user->ID, $product_mapping['type'], $product_mapping['membership_uuid']);
 
         } catch (Exception $e) {
             error_log('[SURECART-WICKET] Error processing purchase revocation: ' . $e->getMessage());
@@ -724,9 +850,10 @@ class SureCart_Wicket_Sync {
      *
      * @param int    $user_id
      * @param string $membership_type 'individual' or 'sustaining'
+     * @param string $tier_uuid       Wicket membership tier UUID
      * @return bool
      */
-    private function deactivate_membership_in_wicket($user_id, $membership_type) {
+    private function deactivate_membership_in_wicket($user_id, $membership_type, $tier_uuid) {
         try {
             $svc = new Wicket_Membership_Service();
         } catch (Exception $e) {
@@ -737,22 +864,22 @@ class SureCart_Wicket_Sync {
         $now = current_time('c');
 
         if ($membership_type === 'sustaining') {
-            $org_membership_uuid = get_user_meta($user_id, 'wicket_org_membership_uuid', true);
+            $org_membership_uuid = self::get_org_membership_uuid($user_id, $tier_uuid);
             if (empty($org_membership_uuid)) {
-                error_log('[SURECART-WICKET] No org membership UUID found for user ' . $user_id . ', cannot deactivate');
+                error_log('[SURECART-WICKET] No org membership UUID found for user ' . $user_id . ' tier ' . $tier_uuid . ', cannot deactivate');
                 return false;
             }
 
-            error_log('[SURECART-WICKET] Deactivating org membership: ' . $org_membership_uuid);
+            error_log('[SURECART-WICKET] Deactivating org membership: ' . $org_membership_uuid . ' (tier: ' . $tier_uuid . ')');
             $res = $svc->update_organization_membership($org_membership_uuid, null, $now);
         } else {
-            $person_membership_uuid = get_user_meta($user_id, 'wicket_person_membership_uuid', true);
+            $person_membership_uuid = self::get_person_membership_uuid($user_id, $tier_uuid);
             if (empty($person_membership_uuid)) {
-                error_log('[SURECART-WICKET] No person membership UUID found for user ' . $user_id . ', cannot deactivate');
+                error_log('[SURECART-WICKET] No person membership UUID found for user ' . $user_id . ' tier ' . $tier_uuid . ', cannot deactivate');
                 return false;
             }
 
-            error_log('[SURECART-WICKET] Deactivating person membership: ' . $person_membership_uuid);
+            error_log('[SURECART-WICKET] Deactivating person membership: ' . $person_membership_uuid . ' (tier: ' . $tier_uuid . ')');
             $res = $svc->update_membership($person_membership_uuid, null, $now);
         }
 
@@ -826,18 +953,18 @@ class SureCart_Wicket_Sync {
      * Sync an individual (person) membership to Wicket
      */
     private function sync_individual_membership($svc, $user_id, $person_uuid, $wicket_membership_uuid, $starts_at, $ends_at) {
-        $existing = get_user_meta($user_id, 'wicket_person_membership_uuid', true);
+        $existing = self::get_person_membership_uuid($user_id, $wicket_membership_uuid);
 
         if ($existing) {
-            error_log('[SURECART-WICKET] Updating existing individual membership: ' . $existing);
+            error_log('[SURECART-WICKET] Updating existing individual membership: ' . $existing . ' (tier: ' . $wicket_membership_uuid . ')');
             $res = $svc->update_membership($existing, $starts_at, $ends_at);
         } else {
-            error_log('[SURECART-WICKET] Creating new individual membership');
+            error_log('[SURECART-WICKET] Creating new individual membership for tier: ' . $wicket_membership_uuid);
             $res = $svc->create_membership($person_uuid, $wicket_membership_uuid, $starts_at, $ends_at);
 
             if (!is_wp_error($res) && isset($res['data']['id'])) {
-                update_user_meta($user_id, 'wicket_person_membership_uuid', $res['data']['id']);
-                error_log('[SURECART-WICKET] Stored person membership UUID: ' . $res['data']['id']);
+                self::set_person_membership_uuid($user_id, $wicket_membership_uuid, $res['data']['id']);
+                error_log('[SURECART-WICKET] Stored person membership UUID: ' . $res['data']['id'] . ' for tier: ' . $wicket_membership_uuid);
             }
         }
 
@@ -894,8 +1021,8 @@ class SureCart_Wicket_Sync {
         }
 
         if (isset($res['data']['id'])) {
-            update_user_meta($user_id, 'wicket_org_membership_uuid', $res['data']['id']);
-            error_log('[SURECART-WICKET] Stored org membership UUID: ' . $res['data']['id']);
+            self::set_org_membership_uuid($user_id, $wicket_membership_uuid, $res['data']['id']);
+            error_log('[SURECART-WICKET] Stored org membership UUID: ' . $res['data']['id'] . ' for tier: ' . $wicket_membership_uuid);
         }
 
         // 3. Ensure person-to-org connection exists (via existing API helper)
@@ -986,7 +1113,7 @@ class SureCart_Wicket_Sync {
             return $person_uuid;
         }
 
-        $existing_person_membership_uuid = get_user_meta($user_id, 'wicket_person_membership_uuid', true);
+        $existing_person_membership_uuid = self::get_person_membership_uuid($user_id, $wicket_membership_uuid);
 
         if ($existing_person_membership_uuid) {
             $res = $svc->update_membership(
@@ -1003,7 +1130,7 @@ class SureCart_Wicket_Sync {
             );
 
             if (!is_wp_error($res) && isset($res['data']['id'])) {
-                update_user_meta($user_id, 'wicket_person_membership_uuid', $res['data']['id']);
+                self::set_person_membership_uuid($user_id, $wicket_membership_uuid, $res['data']['id']);
             }
         }
 
@@ -1019,7 +1146,7 @@ class SureCart_Wicket_Sync {
         return [
             'success' => true,
             'person_uuid' => $person_uuid,
-            'person_membership_uuid' => get_user_meta($user_id, 'wicket_person_membership_uuid', true),
+            'person_membership_uuid' => self::get_person_membership_uuid($user_id, $wicket_membership_uuid),
         ];
     }
 }
