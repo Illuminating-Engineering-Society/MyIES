@@ -196,6 +196,10 @@ class Wicket_Membership_Service {
                     'family_name' => $user->last_name ?: '',
                     'full_name'   => $user->display_name,
                     'language'    => 'en',
+                    'user' => [
+                        'confirmed_at' => gmdate('Y-m-d\TH:i:s.000\Z'),
+                        'skip_confirmation_notification' => true,
+                    ],
                 ],
                 'relationships' => [
                     'emails' => [

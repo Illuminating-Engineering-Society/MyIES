@@ -83,7 +83,9 @@ function wicket_create_basic_person($first_name, $last_name, $email, $password) 
                 'family_name' => sanitize_text_field($last_name),
                 'user' => array(
                     'password' => $password,
-                    'password_confirmation' => $password
+                    'password_confirmation' => $password,
+                    'confirmed_at' => gmdate('Y-m-d\TH:i:s.000\Z'),
+                    'skip_confirmation_notification' => true,
                 )
             ),
             'relationships' => array(
