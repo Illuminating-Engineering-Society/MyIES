@@ -77,7 +77,7 @@ class MyIES_Committees_Shortcode {
 		if ( ! empty( $response['included'] ) ) {
 			foreach ( $response['included'] as $inc ) {
 				if ( ( $inc['type'] ?? '' ) === 'web_addresses' ) {
-					$web_addresses[ $inc['id'] ] = $inc['attributes']['url'] ?? '';
+					$web_addresses[ $inc['id'] ] = $inc['attributes']['address'] ?? '';
 				}
 			}
 		}
@@ -174,7 +174,13 @@ class MyIES_Committees_Shortcode {
 					<?php foreach ( $groups as $group ) : ?>
 					<div class="myies-committees__card" data-name="<?php echo esc_attr( strtolower( $group['name'] ) ); ?>" data-desc="<?php echo esc_attr( strtolower( wp_strip_all_tags( $group['description'] ) ) ); ?>">
 						<div class="myies-committees__card-header">
-							<h4 class="myies-committees__card-name"><?php echo esc_html( $group['name'] ); ?></h4>
+							<h4 class="myies-committees__card-name">
+							<?php if ( ! empty( $group['web_url'] ) ) : ?>
+								<a href="<?php echo esc_url( $group['web_url'] ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $group['name'] ); ?></a>
+							<?php else : ?>
+								<?php echo esc_html( $group['name'] ); ?>
+							<?php endif; ?>
+						</h4>
 							<?php if ( $group['active'] ) : ?>
 								<span class="myies-committees__badge myies-committees__badge--active"><?php esc_html_e( 'Active', 'wicket-integration' ); ?></span>
 							<?php else : ?>
@@ -198,12 +204,6 @@ class MyIES_Committees_Shortcode {
 								</span>
 							<?php endif; ?>
 
-							<?php if ( ! empty( $group['web_url'] ) ) : ?>
-								<a href="<?php echo esc_url( $group['web_url'] ); ?>" class="myies-committees__website-link" target="_blank" rel="noopener noreferrer">
-									<?php esc_html_e( 'Visit Page', 'wicket-integration' ); ?>
-									<svg class="myies-committees__external-icon" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10.5 1.5L5.25 6.75M10.5 1.5H7.5M10.5 1.5V4.5M4.5 1.5H2.25C1.83579 1.5 1.5 1.83579 1.5 2.25V9.75C1.5 10.1642 1.83579 10.5 2.25 10.5H9.75C10.1642 10.5 10.5 10.1642 10.5 9.75V7.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-								</a>
-							<?php endif; ?>
 						</div>
 					</div>
 					<?php endforeach; ?>
