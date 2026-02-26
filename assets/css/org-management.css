@@ -123,6 +123,7 @@
 
 .myies-orgmgmt__add h4 {
 	margin: 0 0 12px;
+	font-size: 1.25em;
 }
 
 /* Search input */
@@ -175,6 +176,74 @@
 	font-style: italic;
 }
 
+/* "+ Add New Person" button in search dropdown */
+.myies-orgmgmt__add-new-btn {
+	padding: 10px 12px;
+	cursor: pointer;
+	color: #0073aa;
+	font-weight: 600;
+	border-top: 1px solid #eee;
+	transition: background-color 0.15s ease;
+}
+
+.myies-orgmgmt__add-new-btn:hover {
+	background: #f0f5ff;
+}
+
+/* ---------- New person form ---------- */
+
+.myies-orgmgmt__new-person {
+	margin-top: 16px;
+	padding: 16px;
+	background: #fff;
+	border: 1px solid #b3d4fc;
+	border-radius: 4px;
+}
+
+.myies-orgmgmt__new-person h4 {
+	margin: 0 0 12px;
+	font-size: 1.1em;
+}
+
+.myies-orgmgmt__field-row {
+	display: flex;
+	gap: 12px;
+}
+
+.myies-orgmgmt__field-row > .myies-orgmgmt__field {
+	flex: 1 1 0;
+}
+
+.myies-orgmgmt__field {
+	margin-bottom: 12px;
+}
+
+.myies-orgmgmt__field label {
+	display: block;
+	margin-bottom: 4px;
+	font-size: 13px;
+	font-weight: 600;
+	color: #333;
+}
+
+.myies-orgmgmt__field input[type="text"],
+.myies-orgmgmt__field input[type="email"],
+.myies-orgmgmt__field select {
+	width: 100%;
+	padding: 8px 10px;
+	font-size: 14px;
+	border: 1px solid #ccc;
+	border-radius: 4px;
+	box-sizing: border-box;
+}
+
+.myies-orgmgmt__new-person-actions {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	margin-top: 4px;
+}
+
 /* Selected user confirmation */
 .myies-orgmgmt__selected {
 	margin-top: 12px;
@@ -224,6 +293,7 @@
 
 .myies-orgmgmt__list h4 {
 	margin: 0 0 12px;
+	font-size: 1.25em;
 }
 
 .myies-orgmgmt__filter {

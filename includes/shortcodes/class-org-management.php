@@ -40,6 +40,7 @@ class MyIES_Org_Management {
 		add_action( 'wp_ajax_myies_orgmgmt_search_users', array( $this, 'ajax_search_users' ) );
 		add_action( 'wp_ajax_myies_orgmgmt_add_member', array( $this, 'ajax_add_member' ) );
 		add_action( 'wp_ajax_myies_orgmgmt_remove_member', array( $this, 'ajax_remove_member' ) );
+		add_action( 'wp_ajax_myies_orgmgmt_create_and_add', array( $this, 'ajax_create_and_add_member' ) );
 
 		// Register assets
 		add_action( 'wp_enqueue_scripts', array( $this, 'register_assets' ) );
@@ -212,9 +213,11 @@ class MyIES_Org_Management {
 				'confirm_remove' => __( 'Remove this person from the organization?', 'wicket-integration' ),
 				'adding'         => __( 'Adding...', 'wicket-integration' ),
 				'removing'       => __( 'Removing...', 'wicket-integration' ),
+				'creating'       => __( 'Creating...', 'wicket-integration' ),
 				'no_results'     => __( 'No users found.', 'wicket-integration' ),
 				'min_chars'      => __( 'Type at least 5 characters to search.', 'wicket-integration' ),
 				'search_placeholder' => __( 'Search by email address...', 'wicket-integration' ),
+				'add_new_person' => __( '+ Add New Person', 'wicket-integration' ),
 			),
 		) );
 
@@ -292,6 +295,40 @@ class MyIES_Org_Management {
 					</div>
 				</div>
 				<div id="myies-orgmgmt-add-message" class="myies-orgmgmt__message" style="display:none;"></div>
+
+				<!-- New person form (shown when search returns no results) -->
+				<div id="myies-orgmgmt-new-person" class="myies-orgmgmt__new-person" style="display:none;">
+					<h4><?php esc_html_e( 'Create New Person', 'wicket-integration' ); ?></h4>
+					<div class="myies-orgmgmt__field-row">
+						<div class="myies-orgmgmt__field">
+							<label for="myies-orgmgmt-new-first"><?php esc_html_e( 'First Name', 'wicket-integration' ); ?></label>
+							<input type="text" id="myies-orgmgmt-new-first" autocomplete="off" required>
+						</div>
+						<div class="myies-orgmgmt__field">
+							<label for="myies-orgmgmt-new-last"><?php esc_html_e( 'Last Name', 'wicket-integration' ); ?></label>
+							<input type="text" id="myies-orgmgmt-new-last" autocomplete="off" required>
+						</div>
+					</div>
+					<div class="myies-orgmgmt__field">
+						<label for="myies-orgmgmt-new-email"><?php esc_html_e( 'Email Address', 'wicket-integration' ); ?></label>
+						<input type="email" id="myies-orgmgmt-new-email" autocomplete="off" required>
+					</div>
+					<div class="myies-orgmgmt__field">
+						<label for="myies-orgmgmt-new-role"><?php esc_html_e( 'Role', 'wicket-integration' ); ?></label>
+						<select id="myies-orgmgmt-new-role">
+							<option value="employee"><?php esc_html_e( 'Company - Employee', 'wicket-integration' ); ?></option>
+						</select>
+					</div>
+					<div class="myies-orgmgmt__new-person-actions">
+						<button type="button" class="myies-orgmgmt__btn myies-orgmgmt__btn--primary" id="myies-orgmgmt-create-btn">
+							<?php esc_html_e( 'Create & Add to Organization', 'wicket-integration' ); ?>
+						</button>
+						<button type="button" class="myies-orgmgmt__btn myies-orgmgmt__btn--secondary" id="myies-orgmgmt-new-cancel-btn">
+							<?php esc_html_e( 'Cancel', 'wicket-integration' ); ?>
+						</button>
+					</div>
+					<div id="myies-orgmgmt-new-message" class="myies-orgmgmt__message" style="display:none;"></div>
+				</div>
 			</div>
 			<?php endif; ?>
 
@@ -493,6 +530,78 @@ class MyIES_Org_Management {
 			wp_send_json_success( array( 'message' => __( 'Member removed from organization.', 'wicket-integration' ) ) );
 		} else {
 			wp_send_json_error( array( 'message' => $result['message'] ?? __( 'Failed to remove member.', 'wicket-integration' ) ) );
+		}
+	}
+
+	// =========================================================================
+	// AJAX: Create a new WP user + Wicket person and add to organization
+	// =========================================================================
+
+	public function ajax_create_and_add_member() {
+		check_ajax_referer( 'myies_orgmgmt_nonce', 'nonce' );
+		$auth = $this->check_authorization();
+		if ( ! $auth['authorized'] || ! $auth['can_manage'] ) {
+			wp_send_json_error( array( 'message' => 'Unauthorized — Management role required.' ) );
+		}
+
+		$first_name = isset( $_POST['first_name'] ) ? sanitize_text_field( $_POST['first_name'] ) : '';
+		$last_name  = isset( $_POST['last_name'] ) ? sanitize_text_field( $_POST['last_name'] ) : '';
+		$email      = isset( $_POST['email'] ) ? sanitize_email( $_POST['email'] ) : '';
+		$role       = isset( $_POST['role'] ) ? sanitize_text_field( $_POST['role'] ) : 'employee';
+
+		if ( empty( $first_name ) || empty( $last_name ) || empty( $email ) ) {
+			wp_send_json_error( array( 'message' => __( 'First name, last name, and email are required.', 'wicket-integration' ) ) );
+		}
+
+		if ( ! is_email( $email ) ) {
+			wp_send_json_error( array( 'message' => __( 'Please enter a valid email address.', 'wicket-integration' ) ) );
+		}
+
+		// Check if email already exists in WP
+		if ( email_exists( $email ) ) {
+			wp_send_json_error( array( 'message' => __( 'This email address is already registered. Please use the search to find and add the existing user.', 'wicket-integration' ) ) );
+		}
+
+		// Create WP user
+		$username = sanitize_user( $email, true );
+		$password = wp_generate_password( 24 );
+		$wp_user_id = wp_insert_user( array(
+			'user_login' => $username,
+			'user_email' => $email,
+			'user_pass'  => $password,
+			'first_name' => $first_name,
+			'last_name'  => $last_name,
+			'display_name' => $first_name . ' ' . $last_name,
+		) );
+
+		if ( is_wp_error( $wp_user_id ) ) {
+			wp_send_json_error( array( 'message' => $wp_user_id->get_error_message() ) );
+		}
+
+		// Create Wicket person (or find existing by email)
+		try {
+			$svc         = new Wicket_Membership_Service();
+			$person_uuid = $svc->find_or_create_person( $wp_user_id );
+			if ( is_wp_error( $person_uuid ) ) {
+				wp_send_json_error( array( 'message' => $person_uuid->get_error_message() ) );
+			}
+		} catch ( Exception $e ) {
+			wp_send_json_error( array( 'message' => $e->getMessage() ) );
+		}
+
+		// Add to organization
+		$api    = wicket_api();
+		$result = $api->create_person_org_connection( $person_uuid, $auth['org_uuid'], $role );
+
+		if ( $result['success'] ) {
+			wp_send_json_success( array(
+				'message' => sprintf(
+					__( '%s has been created and added to the organization.', 'wicket-integration' ),
+					$first_name . ' ' . $last_name
+				),
+			) );
+		} else {
+			wp_send_json_error( array( 'message' => $result['message'] ?? __( 'Person was created but could not be added to the organization.', 'wicket-integration' ) ) );
 		}
 	}
 }

@@ -28,6 +28,16 @@
 	var $members      = $('#myies-orgmgmt-members');
 	var $filter       = $('#myies-orgmgmt-filter');
 
+	// New person form elements
+	var $newPerson    = $('#myies-orgmgmt-new-person');
+	var $newFirst     = $('#myies-orgmgmt-new-first');
+	var $newLast      = $('#myies-orgmgmt-new-last');
+	var $newEmail     = $('#myies-orgmgmt-new-email');
+	var $newRole      = $('#myies-orgmgmt-new-role');
+	var $createBtn    = $('#myies-orgmgmt-create-btn');
+	var $newCancelBtn = $('#myies-orgmgmt-new-cancel-btn');
+	var $newMsg       = $('#myies-orgmgmt-new-message');
+
 	var selectedUser  = null;
 	var searchTimer   = null;
 	var allMembers    = [];
@@ -59,9 +69,30 @@
 		$search.val('').show();
 		$results.empty().hide();
 		$addMsg.hide();
+		hideNewPersonForm();
 		$addSection.slideUp(200, function () {
 			$toggleAdd.show();
 		});
+	}
+
+	function showNewPersonForm(prefillEmail) {
+		$search.hide();
+		$results.empty().hide();
+		$newFirst.val('');
+		$newLast.val('');
+		$newEmail.val(prefillEmail || '');
+		$newRole.val('employee');
+		$newMsg.hide();
+		$newPerson.show();
+		$newFirst.focus();
+	}
+
+	function hideNewPersonForm() {
+		$newPerson.hide();
+		$newFirst.val('');
+		$newLast.val('');
+		$newEmail.val('');
+		$newMsg.hide();
 	}
 
 	// =========================================================================
@@ -82,7 +113,12 @@
 			}, function (res) {
 				$results.empty();
 				if (!res.success || !res.data.results.length) {
-					$results.html('<div class="myies-orgmgmt__no-result">' + cfg.i18n.no_results + '</div>').show();
+					var noResultHtml = '<div class="myies-orgmgmt__no-result">' + cfg.i18n.no_results + '</div>';
+					if (canManage) {
+						noResultHtml += '<div class="myies-orgmgmt__add-new-btn" data-email="' + escAttr(val) + '">' +
+							escHtml(cfg.i18n.add_new_person) + '</div>';
+					}
+					$results.html(noResultHtml).show();
 					return;
 				}
 				res.data.results.forEach(function (u) {
@@ -114,6 +150,58 @@
 	$cancelBtn.on('click', function () {
 		hideAddSection();
 	});
+
+	// Click "+ Add New Person" in search results
+	$results.on('click', '.myies-orgmgmt__add-new-btn', function () {
+		var prefillEmail = $(this).data('email') || '';
+		showNewPersonForm(prefillEmail);
+	});
+
+	// Cancel new person form — return to search
+	$newCancelBtn.on('click', function () {
+		hideNewPersonForm();
+		$search.show().val('').focus();
+	});
+
+	// Create & Add new person
+	$createBtn.on('click', function () {
+		var firstName = $.trim($newFirst.val());
+		var lastName  = $.trim($newLast.val());
+		var email     = $.trim($newEmail.val());
+		var role      = $newRole.val();
+
+		if (!firstName || !lastName || !email) {
+			showMsg($newMsg, 'Please fill in all fields.', true);
+			return;
+		}
+
+		var $btn = $(this);
+		$btn.prop('disabled', true).text(cfg.i18n.creating);
+
+		$.post(cfg.ajaxUrl, {
+			action:     'myies_orgmgmt_create_and_add',
+			nonce:      cfg.nonce,
+			first_name: firstName,
+			last_name:  lastName,
+			email:      email,
+			role:       role
+		}, function (res) {
+			$btn.prop('disabled', false).text($createBtn.data('orig') || 'Create & Add to Organization');
+			if (res.success) {
+				showMsg($newMsg, res.data.message, false);
+				loadMembers();
+				setTimeout(function () { hideAddSection(); }, 1500);
+			} else {
+				showMsg($newMsg, res.data.message || 'Error', true);
+			}
+		}).fail(function () {
+			$btn.prop('disabled', false).text($createBtn.data('orig') || 'Create & Add to Organization');
+			showMsg($newMsg, 'Request failed.', true);
+		});
+	});
+
+	// Store original create button text
+	$createBtn.data('orig', $createBtn.text());
 
 	// Add member
 	$addBtn.on('click', function () {
