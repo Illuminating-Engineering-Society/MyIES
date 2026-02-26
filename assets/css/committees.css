@@ -1,0 +1,179 @@
+/* ==========================================================================
+   Committees / Groups — [myies_committees]
+   ========================================================================== */
+
+.myies-committees {
+	width: 100%;
+	box-sizing: border-box;
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, sans-serif;
+}
+
+/* ---------- Filters bar ---------- */
+
+.myies-committees__filters {
+	display: flex;
+	gap: 12px;
+	margin-bottom: 24px;
+	flex-wrap: wrap;
+}
+
+.myies-committees__search {
+	flex: 1 1 260px;
+	min-width: 200px;
+	padding: 10px 12px;
+	font-size: 14px;
+	border: 1px solid #ccc;
+	border-radius: 4px;
+	box-sizing: border-box;
+}
+
+.myies-committees__search:focus {
+	outline: none;
+	border-color: #0073aa;
+	box-shadow: 0 0 0 1px #0073aa;
+}
+
+.myies-committees__type-select {
+	flex: 0 1 220px;
+	padding: 10px 12px;
+	font-size: 14px;
+	border: 1px solid #ccc;
+	border-radius: 4px;
+	box-sizing: border-box;
+	background: #fff;
+}
+
+.myies-committees__type-select:focus {
+	outline: none;
+	border-color: #0073aa;
+	box-shadow: 0 0 0 1px #0073aa;
+}
+
+/* ---------- Category sections ---------- */
+
+.myies-committees__category {
+	margin-bottom: 32px;
+}
+
+.myies-committees__category-heading {
+	margin: 0 0 16px;
+	font-size: 1.3em;
+	font-weight: 700;
+	border-bottom: 2px solid #e0e0e0;
+	padding-bottom: 8px;
+}
+
+.myies-committees__category-count {
+	font-weight: 400;
+	color: #888;
+	font-size: 0.85em;
+}
+
+/* ---------- Card grid ---------- */
+
+.myies-committees__grid {
+	display: grid;
+	grid-template-columns: repeat(3, 1fr);
+	gap: 16px;
+}
+
+@media (max-width: 1024px) {
+	.myies-committees__grid {
+		grid-template-columns: repeat(2, 1fr);
+	}
+}
+
+@media (max-width: 600px) {
+	.myies-committees__grid {
+		grid-template-columns: 1fr;
+	}
+}
+
+/* ---------- Card ---------- */
+
+.myies-committees__card {
+	display: flex;
+	flex-direction: column;
+	padding: 16px 20px;
+	background: #fff;
+	border: 1px solid #e0e0e0;
+	border-radius: 6px;
+	transition: box-shadow 0.15s ease, border-color 0.15s ease;
+}
+
+.myies-committees__card:hover {
+	border-color: #0073aa;
+	box-shadow: 0 2px 8px rgba(0, 115, 170, 0.1);
+}
+
+.myies-committees__card-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: flex-start;
+	gap: 8px;
+	margin-bottom: 8px;
+}
+
+.myies-committees__card-name {
+	margin: 0;
+	font-size: 1em;
+	font-weight: 600;
+	line-height: 1.3;
+}
+
+.myies-committees__card-desc {
+	margin: 0 0 12px;
+	font-size: 0.9em;
+	color: #555;
+	line-height: 1.5;
+	flex-grow: 1;
+}
+
+.myies-committees__card-footer {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 8px;
+	margin-top: auto;
+	padding-top: 10px;
+	border-top: 1px solid #f0f0f0;
+}
+
+/* ---------- Status badges ---------- */
+
+.myies-committees__badge {
+	display: inline-block;
+	padding: 2px 8px;
+	font-size: 0.75em;
+	font-weight: 600;
+	line-height: 1.4;
+	border-radius: 10px;
+	white-space: nowrap;
+	flex-shrink: 0;
+}
+
+.myies-committees__badge--active {
+	background: #ecfdf5;
+	color: #059669;
+}
+
+.myies-committees__badge--inactive {
+	background: #f3f4f6;
+	color: #6b7280;
+}
+
+/* ---------- Member count ---------- */
+
+.myies-committees__member-count {
+	font-size: 0.85em;
+	color: #666;
+}
+
+/* ---------- No results message ---------- */
+
+.myies-committees__no-results {
+	text-align: center;
+	padding: 24px 0;
+	color: #888;
+	font-style: italic;
+}

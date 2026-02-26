@@ -991,6 +991,69 @@ class Wicket_API_Helper {
     }
 
     // =========================================================================
+    // GROUP METHODS
+    // =========================================================================
+
+    /**
+     * Get groups from Wicket API
+     *
+     * @param array  $filters   Associative array of Ransack filters (e.g. ['type_eq' => 'committee', 'active_eq' => 'true'])
+     * @param int    $page_size Page size (max 500)
+     * @param string $include   Comma-separated sideloads (default: 'web_address')
+     * @return array|null Full JSON:API response (data + included) or null on error
+     */
+    public function get_groups($filters = array(), $page_size = 500, $include = 'web_address') {
+        $token = $this->generate_jwt_token();
+        if (is_wp_error($token)) {
+            myies_log('Failed to generate token for groups', 'Wicket API Helper');
+            return null;
+        }
+
+        $query = array(
+            'page[size]' => $page_size,
+            'sort'       => 'name',
+        );
+
+        if (!empty($include)) {
+            $query['include'] = $include;
+        }
+
+        foreach ($filters as $key => $value) {
+            $query["filter[{$key}]"] = $value;
+        }
+
+        $endpoint = $this->get_api_url() . '/groups?' . http_build_query($query);
+
+        myies_log('Fetching groups: ' . $endpoint, 'Wicket API Helper');
+
+        $response = wp_remote_get($endpoint, array(
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type'  => 'application/json',
+                'Accept'        => 'application/json',
+            ),
+            'timeout' => 60,
+        ));
+
+        if (is_wp_error($response)) {
+            myies_log('Groups fetch error: ' . $response->get_error_message(), 'Wicket API Helper');
+            return null;
+        }
+
+        $status_code = wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if ($status_code < 200 || $status_code >= 300) {
+            myies_log('Groups API error — HTTP ' . $status_code, 'Wicket API Helper');
+            return null;
+        }
+
+        myies_log('Groups fetched: ' . count($body['data'] ?? array()) . ' records', 'Wicket API Helper');
+
+        return $body;
+    }
+
+    // =========================================================================
     // Organization Management helpers
     // =========================================================================
 
