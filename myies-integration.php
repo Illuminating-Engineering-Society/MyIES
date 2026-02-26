@@ -84,6 +84,7 @@ class Wicket_Integration {
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/shortcodes/class-org-management.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/shortcodes/class-lighting-library-shortcode.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/shortcodes/class-committees-shortcode.php';
+        require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/shortcodes/class-my-committees-shortcode.php';
 
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/frontend/class-wicket-sign-up.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/frontend/class-profile-edit-mode.php';

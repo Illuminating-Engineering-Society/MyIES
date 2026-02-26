@@ -168,7 +168,10 @@ class Wicket_Membership_Service {
         }
 
         // Check if we already have the UUID stored
-        $existing_uuid = get_user_meta($user_id, 'wicket_person_uuid', true);
+        $existing_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+        if (empty($existing_uuid)) {
+            $existing_uuid = get_user_meta($user_id, 'wicket_person_uuid', true);
+        }
         if (!empty($existing_uuid)) {
             return $existing_uuid;
         }
@@ -183,7 +186,7 @@ class Wicket_Membership_Service {
         }
 
         if (!empty($search['data'][0]['id'])) {
-            update_user_meta($user_id, 'wicket_person_uuid', $search['data'][0]['id']);
+            update_user_meta($user_id, 'wicket_uuid', $search['data'][0]['id']);
             return $search['data'][0]['id'];
         }
 
@@ -222,7 +225,7 @@ class Wicket_Membership_Service {
             return $res;
         }
 
-        update_user_meta($user_id, 'wicket_person_uuid', $res['data']['id']);
+        update_user_meta($user_id, 'wicket_uuid', $res['data']['id']);
         return $res['data']['id'];
     }
 

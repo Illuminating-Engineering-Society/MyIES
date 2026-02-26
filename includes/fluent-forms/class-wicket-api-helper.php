@@ -1053,6 +1053,60 @@ class Wicket_API_Helper {
         return $body;
     }
 
+    /**
+     * Get all group memberships for a specific person.
+     *
+     * Uses the /group_members endpoint filtered by person UUID, with group
+     * sideloaded so we get full group details in one call.
+     *
+     * @param string $person_uuid Person UUID
+     * @param int    $page_size   Page size (max 500)
+     * @return array|null Full JSON:API response (data + included) or null on error
+     */
+    public function get_person_group_memberships($person_uuid, $page_size = 500) {
+        if (empty($person_uuid)) {
+            return null;
+        }
+
+        $token = $this->generate_jwt_token();
+        if (is_wp_error($token)) {
+            myies_log('Failed to generate token for person group memberships', 'Wicket API Helper');
+            return null;
+        }
+
+        $endpoint = $this->get_api_url() . '/group_members/query?include=group&page[size]=' . $page_size;
+
+        $filter_body = array(
+            'filter' => array(
+                'person_uuid_eq' => $person_uuid,
+            ),
+        );
+
+        $response = wp_remote_post($endpoint, array(
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $token,
+                'Content-Type'  => 'application/json',
+                'Accept'        => 'application/json',
+            ),
+            'body'    => wp_json_encode($filter_body),
+            'timeout' => 60,
+        ));
+
+        if (is_wp_error($response)) {
+            error_log('[MyCommittees API] WP error: ' . $response->get_error_message());
+            return null;
+        }
+
+        $status_code = wp_remote_retrieve_response_code($response);
+        $body = json_decode(wp_remote_retrieve_body($response), true);
+
+        if ($status_code < 200 || $status_code >= 300) {
+            return null;
+        }
+
+        return $body;
+    }
+
     // =========================================================================
     // Organization Management helpers
     // =========================================================================
