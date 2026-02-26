@@ -66,10 +66,20 @@ class MyIES_Committees_Shortcode {
 		}
 
 		$api      = wicket_api();
-		$response = $api->get_groups( $filters, 500, '' );
+		$response = $api->get_groups( $filters );
 
 		if ( empty( $response ) || empty( $response['data'] ) ) {
 			return '<div class="myies-committees"><p>' . esc_html__( 'No committees or groups found.', 'wicket-integration' ) . '</p></div>';
+		}
+
+		// Build web_address lookup from included resources
+		$web_addresses = array();
+		if ( ! empty( $response['included'] ) ) {
+			foreach ( $response['included'] as $inc ) {
+				if ( ( $inc['type'] ?? '' ) === 'web_addresses' ) {
+					$web_addresses[ $inc['id'] ] = $inc['attributes']['url'] ?? '';
+				}
+			}
 		}
 
 		// Group by type and sort
@@ -80,12 +90,20 @@ class MyIES_Committees_Shortcode {
 				$grouped[ $type ] = array();
 			}
 
+			// Resolve web address URL from sideloaded data
+			$web_url = '';
+			$wa_data = $group['relationships']['web_address']['data'] ?? null;
+			if ( $wa_data && isset( $wa_data['id'], $web_addresses[ $wa_data['id'] ] ) ) {
+				$web_url = $web_addresses[ $wa_data['id'] ];
+			}
+
 			$grouped[ $type ][] = array(
 				'id'           => $group['id'],
 				'name'         => $group['attributes']['name'] ?? '',
 				'description'  => $group['attributes']['description'] ?? '',
 				'active'       => ! empty( $group['attributes']['active'] ),
 				'member_count' => $group['attributes']['active_members_count'] ?? $group['attributes']['members_count'] ?? 0,
+				'web_url'      => $web_url,
 			);
 		}
 
@@ -168,18 +186,25 @@ class MyIES_Committees_Shortcode {
 							<p class="myies-committees__card-desc"><?php echo esc_html( wp_trim_words( wp_strip_all_tags( $group['description'] ), 30, '...' ) ); ?></p>
 						<?php endif; ?>
 
-						<?php if ( $group['member_count'] > 0 ) : ?>
 						<div class="myies-committees__card-footer">
-							<span class="myies-committees__member-count">
-								<?php
-								printf(
-									esc_html( _n( '%s member', '%s members', $group['member_count'], 'wicket-integration' ) ),
-									esc_html( number_format_i18n( $group['member_count'] ) )
-								);
-								?>
-							</span>
+							<?php if ( $group['member_count'] > 0 ) : ?>
+								<span class="myies-committees__member-count">
+									<?php
+									printf(
+										esc_html( _n( '%s member', '%s members', $group['member_count'], 'wicket-integration' ) ),
+										esc_html( number_format_i18n( $group['member_count'] ) )
+									);
+									?>
+								</span>
+							<?php endif; ?>
+
+							<?php if ( ! empty( $group['web_url'] ) ) : ?>
+								<a href="<?php echo esc_url( $group['web_url'] ); ?>" class="myies-committees__website-link" target="_blank" rel="noopener noreferrer">
+									<?php esc_html_e( 'Visit Page', 'wicket-integration' ); ?>
+									<svg class="myies-committees__external-icon" width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M10.5 1.5L5.25 6.75M10.5 1.5H7.5M10.5 1.5V4.5M4.5 1.5H2.25C1.83579 1.5 1.5 1.83579 1.5 2.25V9.75C1.5 10.1642 1.83579 10.5 2.25 10.5H9.75C10.1642 10.5 10.5 10.1642 10.5 9.75V7.5" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+								</a>
+							<?php endif; ?>
 						</div>
-						<?php endif; ?>
 					</div>
 					<?php endforeach; ?>
 				</div>

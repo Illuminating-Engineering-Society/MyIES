@@ -169,6 +169,28 @@
 	color: #666;
 }
 
+/* ---------- Website link ---------- */
+
+.myies-committees__website-link {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font-size: 0.85em;
+	font-weight: 600;
+	color: #0073aa;
+	text-decoration: none;
+	margin-left: auto;
+}
+
+.myies-committees__website-link:hover {
+	color: #005d8c;
+	text-decoration: underline;
+}
+
+.myies-committees__external-icon {
+	flex-shrink: 0;
+}
+
 /* ---------- No results message ---------- */
 
 .myies-committees__no-results {
