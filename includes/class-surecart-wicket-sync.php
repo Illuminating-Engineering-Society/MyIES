@@ -176,6 +176,10 @@ class Wicket_Membership_Service {
             return $existing_uuid;
         }
 
+        if (empty($user->user_email)) {
+            return new WP_Error('no_email', 'WP user has no email — cannot search Wicket');
+        }
+
         // Search for person by email
         $search = $this->request(
             '/people?filter[emails_address_eq]=' . urlencode($user->user_email)

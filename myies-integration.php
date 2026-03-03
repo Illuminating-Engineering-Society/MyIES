@@ -74,6 +74,7 @@ class Wicket_Integration {
 
         // Admin & Settings
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/admin/class-wicket-settings-page.php';
+        require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/admin/class-wicket-uuid-repair.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/admin/class-hide-utilities-for-users.php';
         
         // Frontend
@@ -85,6 +86,7 @@ class Wicket_Integration {
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/shortcodes/class-lighting-library-shortcode.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/shortcodes/class-committees-shortcode.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/shortcodes/class-my-committees-shortcode.php';
+        require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/shortcodes/class-my-awards-shortcode.php';
 
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/frontend/class-wicket-sign-up.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/frontend/class-profile-edit-mode.php';

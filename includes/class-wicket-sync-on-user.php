@@ -158,16 +158,20 @@ class WicketLoginSync {
         }
         
         error_log("Wicket Sync: Starting {$sync_source} sync for user {$user->ID} ({$user->user_email})");
-        
-        // Attempt sync by email first
-        $result = $this->sync_user_by_email($user->user_email, $user->ID, $config);
-        
-        // If email sync fails, try by stored Wicket UUID
-        if (is_wp_error($result)) {
-            $wicket_uuid = get_user_meta($user->ID, 'wicket_uuid', true);
-            if (!empty($wicket_uuid)) {
-                $result = $this->sync_user_by_uuid($wicket_uuid, $user->ID, $config);
+
+        // UUID is the stable identifier — always prefer it over email.
+        // Email lookup is only a fallback for users who don't have a UUID yet.
+        $wicket_uuid = get_user_meta($user->ID, 'wicket_uuid', true);
+
+        if (!empty($wicket_uuid)) {
+            $result = $this->sync_user_by_uuid($wicket_uuid, $user->ID, $config);
+
+            if (is_wp_error($result)) {
+                error_log("Wicket Sync: UUID lookup failed for {$wicket_uuid}, falling back to email");
+                $result = $this->sync_user_by_email($user->user_email, $user->ID, $config);
             }
+        } else {
+            $result = $this->sync_user_by_email($user->user_email, $user->ID, $config);
         }
         
         // Log results
@@ -216,6 +220,10 @@ class WicketLoginSync {
      * UPDATED: Added include=addresses,phones,emails
      */
     private function sync_user_by_email($email, $user_id, $config) {
+        if (empty($email)) {
+            return new WP_Error('no_email', 'User has no email — cannot search Wicket');
+        }
+
         // Generate JWT token
         $jwt_token = $this->generate_jwt_token($config);
         if (is_wp_error($jwt_token)) {
@@ -240,12 +248,60 @@ class WicketLoginSync {
         if (!isset($data['data']) || empty($data['data'])) {
             return new WP_Error('person_not_found', 'No Wicket person found with email: ' . $email);
         }
-        
-        // Get first person and sync - UPDATED: pass included data
-        $person = $data['data'][0];
+
+        $people = $data['data'];
         $included = $data['included'] ?? array();
-        
-        return $this->sync_user_data($person, $user_id, $included);
+
+        // If this WP user already has a UUID, only accept a match for that UUID.
+        // This prevents email collisions from overwriting the wrong user.
+        $existing_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+        $person = null;
+
+        if (!empty($existing_uuid)) {
+            foreach ($people as $p) {
+                if (($p['id'] ?? ($p['attributes']['uuid'] ?? '')) === $existing_uuid) {
+                    $person = $p;
+                    break;
+                }
+            }
+            if (!$person) {
+                error_log("Wicket Sync: Email search for '{$email}' returned " . count($people) . " result(s) but none matched existing UUID {$existing_uuid} — refusing to sync wrong person");
+                return new WP_Error('uuid_mismatch', 'Email lookup found a different person than the stored UUID');
+            }
+        } else {
+            // No UUID stored yet — warn if multiple results but use the first one.
+            if (count($people) > 1) {
+                error_log("Wicket Sync: WARNING — Email search for '{$email}' returned " . count($people) . " people, using first result. Verify this is correct.");
+            }
+            $person = $people[0];
+        }
+
+        // Filter included data to only items belonging to this person
+        $person_id = $person['id'] ?? ($person['attributes']['uuid'] ?? null);
+        $person_relationships = $person['relationships'] ?? array();
+        $related_ids = array();
+        foreach ($person_relationships as $rel) {
+            $rel_data = $rel['data'] ?? null;
+            if (!$rel_data) continue;
+            if (isset($rel_data['id'])) {
+                $related_ids[$rel_data['id']] = true;
+            } elseif (is_array($rel_data)) {
+                foreach ($rel_data as $item) {
+                    if (isset($item['id'])) {
+                        $related_ids[$item['id']] = true;
+                    }
+                }
+            }
+        }
+
+        $filtered_included = array();
+        foreach ($included as $item) {
+            if (isset($item['id']) && isset($related_ids[$item['id']])) {
+                $filtered_included[] = $item;
+            }
+        }
+
+        return $this->sync_user_data($person, $user_id, $filtered_included);
     }
     
     /**

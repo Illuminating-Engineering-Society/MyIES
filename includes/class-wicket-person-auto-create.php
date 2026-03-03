@@ -148,7 +148,12 @@ class Wicket_Person_Auto_Create {
             error_log("Wicket Person Auto-Create: Could not get user data for user {$user_id}");
             return;
         }
-        
+
+        if (empty($user->user_email)) {
+            error_log("Wicket Person Auto-Create: User {$user_id} has no email — skipping to avoid blank-email lookup");
+            return;
+        }
+
         // Try to find existing person by email first
         error_log("Wicket Person Auto-Create: Searching for person by email: {$user->user_email}");
         $search_response = $this->wicket_api_request("/people?filter[emails_address_eq]=" . urlencode($user->user_email));

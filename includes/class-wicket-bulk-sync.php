@@ -593,16 +593,19 @@ class WicketBulkSync {
         if (!$this->wicket_sync) {
             return new WP_Error('no_sync_class', 'Wicket sync class not available');
         }
-        
-        // Try to sync by email first
-        $result = $this->wicket_sync->sync_wicket_person_by_email($email, $user_id, $tenant, $api_secret_key, $admin_user_uuid);
-        
-        // If email sync fails, try by UUID
-        if (is_wp_error($result)) {
-            $wicket_uuid = get_user_meta($user_id, 'wicket_uuid', true);
-            if (!empty($wicket_uuid)) {
-                $result = $this->wicket_sync->sync_wicket_person_to_acf($wicket_uuid, $user_id, $tenant, $api_secret_key, $admin_user_uuid);
+
+        // UUID is the stable identifier — always prefer it over email.
+        $wicket_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+
+        if (!empty($wicket_uuid)) {
+            $result = $this->wicket_sync->sync_wicket_person_to_acf($wicket_uuid, $user_id, $tenant, $api_secret_key, $admin_user_uuid);
+
+            if (is_wp_error($result)) {
+                error_log("Wicket Bulk Sync: UUID lookup failed for {$wicket_uuid}, falling back to email");
+                $result = $this->wicket_sync->sync_wicket_person_by_email($email, $user_id, $tenant, $api_secret_key, $admin_user_uuid);
             }
+        } else {
+            $result = $this->wicket_sync->sync_wicket_person_by_email($email, $user_id, $tenant, $api_secret_key, $admin_user_uuid);
         }
         
         // Sync memberships if the memberships class is available
