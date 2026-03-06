@@ -666,58 +666,104 @@ class MyIES_SureCart_Shortcodes {
 								</div>
 							</div>
 
-							<!-- Management Buttons -->
-							<div class="brxe-block ins-grid-desc">
-								<div class="brxe-block subs-stat">
-									<?php if ( $is_subscription && $subscription_id ) : ?>
-										<?php
-										try {
-											$subscription = \SureCart\Models\Subscription::with(
-												array(
-													'price',
-													'price.product',
-													'current_period',
-													'current_cancellation_act',
-												)
-											)->find( $subscription_id );
+							<?php
+							// Get expiration date from Wicket memberships table for 90-day renewal window.
+							$wicket_person_membership = wicket_memberships()->get_active_person_membership();
+							$membership_ends_at       = ! empty( $wicket_person_membership['ends_at'] ) ? strtotime( $wicket_person_membership['ends_at'] ) : null;
+							$show_renew_button        = true; // Fallback: show if no expiration data.
 
-											if ( ! $subscription ) {
-												echo '<p>' . esc_html__( 'Subscription not found', 'wicket-integration' ) . '</p>';
+							if ( $membership_ends_at ) {
+								$days_until_expiration = ( $membership_ends_at - current_time( 'timestamp' ) ) / DAY_IN_SECONDS;
+								$show_renew_button     = ( $days_until_expiration <= 90 );
+							}
+
+							// Pre-fetch subscription details to determine auto-renew status.
+							$subscription_obj  = null;
+							$is_auto_renewing  = false;
+							if ( $is_subscription && $subscription_id ) {
+								try {
+									$subscription_obj = \SureCart\Models\Subscription::with(
+										array(
+											'price',
+											'price.product',
+											'current_period',
+											'current_cancellation_act',
+										)
+									)->find( $subscription_id );
+
+									if ( $subscription_obj && ! $subscription_obj->cancel_at_period_end ) {
+										$is_auto_renewing = true;
+									}
+								} catch ( \Exception $e ) {
+									$subscription_obj = null;
+								}
+							}
+							?>
+
+							<!-- Renew / Renews on Button -->
+							<?php if ( $show_renew_button ) : ?>
+								<div class="brxe-block ins-grid-desc">
+									<div class="brxe-block subs-stat">
+										<?php if ( $is_auto_renewing ) : ?>
+											<?php
+											$renew_date = $membership_ends_at
+												? date_i18n( get_option( 'date_format' ), $membership_ends_at )
+												: '';
+											?>
+											<span class="brxe-button change-org-btn bricks-button bricks-background-primary" style="pointer-events: none; opacity: 0.85;">
+												<?php
+												/* translators: %s: membership renewal date */
+												printf( esc_html__( 'Renews on %s', 'wicket-integration' ), esc_html( $renew_date ) );
+												?>
+											</span>
+										<?php else : ?>
+											<a class="brxe-button change-org-btn bricks-button bricks-background-primary"
+											   href="<?php echo esc_url( $renew_url ); ?>">
+												<?php esc_html_e( 'Renew', 'wicket-integration' ); ?>
+											</a>
+										<?php endif; ?>
+									</div>
+								</div>
+							<?php endif; ?>
+
+							<!-- Subscription Management -->
+							<?php if ( $is_subscription && $subscription_id ) : ?>
+								<div class="brxe-block ins-grid-desc">
+									<div class="brxe-block subs-stat">
+										<?php
+										if ( ! $subscription_obj ) {
+											echo '<p>' . esc_html__( 'Subscription not found', 'wicket-integration' ) . '</p>';
+										} else {
+											if ( $subscription_obj->cancel_at_period_end ) {
+												echo wp_kses_post(
+													\SureCart\Models\Component::tag( 'sc-subscription-details' )
+														->id( 'customer-subscription-details-' . esc_attr( $subscription_id ) )
+														->with(
+															array(
+																'subscription' => $subscription_obj,
+																'backUrl'      => esc_url_raw( home_url( '/my-account/' ) ),
+																'successUrl'   => esc_url_raw( home_url( '/my-account/' ) ),
+															)
+														)
+														->render()
+												);
 											} else {
-												$has_cancellation = $subscription->cancel_at_period_end;
-												if ( $has_cancellation ) {
-													echo wp_kses_post(
-														\SureCart\Models\Component::tag( 'sc-subscription-details' )
-															->id( 'customer-subscription-details-' . esc_attr( $subscription_id ) )
-															->with(
-																array(
-																	'subscription' => $subscription,
-																	'backUrl'      => esc_url_raw( home_url( '/my-account/' ) ),
-																	'successUrl'   => esc_url_raw( home_url( '/my-account/' ) ),
-																)
+												$protocol = \SureCart\Models\SubscriptionProtocol::with( array( 'preservation_coupon' ) )->find();
+												echo wp_kses_post(
+													\SureCart\Models\Component::tag( 'sc-subscription-cancel' )
+														->id( 'customer-subscription-cancel-' . esc_attr( $subscription_id ) )
+														->with(
+															array(
+																'subscription' => $subscription_obj,
+																'protocol'     => $protocol,
+																'backUrl'      => esc_url_raw( home_url( '/my-account/' ) ),
+																'successUrl'   => esc_url_raw( home_url( '/my-account/' ) ),
+																'cancel-text'  => __( 'Cancel Subscription', 'wicket-integration' ),
 															)
-															->render()
-													);
-												} else {
-													$protocol = \SureCart\Models\SubscriptionProtocol::with( array( 'preservation_coupon' ) )->find();
-													echo wp_kses_post(
-														\SureCart\Models\Component::tag( 'sc-subscription-cancel' )
-															->id( 'customer-subscription-cancel-' . esc_attr( $subscription_id ) )
-															->with(
-																array(
-																	'subscription' => $subscription,
-																	'protocol'     => $protocol,
-																	'backUrl'      => esc_url_raw( home_url( '/my-account/' ) ),
-																	'successUrl'   => esc_url_raw( home_url( '/my-account/' ) ),
-																	'cancel-text'  => __( 'Cancel Subscription', 'wicket-integration' ),
-																)
-															)
-															->render()
-													);
-												}
+														)
+														->render()
+												);
 											}
-										} catch ( \Exception $e ) {
-											echo '<p>' . esc_html__( 'Error loading subscription details.', 'wicket-integration' ) . '</p>';
 										}
 										?>
 										<script>
@@ -729,14 +775,9 @@ class MyIES_SureCart_Shortcodes {
 												});
 											});
 										</script>
-									<?php else : ?>
-										<a class="brxe-button change-org-btn bricks-button bricks-background-primary"
-										   href="<?php echo esc_url( $renew_url ); ?>">
-											<?php esc_html_e( 'Renew', 'wicket-integration' ); ?>
-										</a>
-									<?php endif; ?>
+									</div>
 								</div>
-							</div>
+							<?php endif; ?>
 						</div>
 					<?php endif; ?>
 				</div>

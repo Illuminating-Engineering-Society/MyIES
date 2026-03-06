@@ -75,6 +75,7 @@ class Wicket_Integration {
         // Admin & Settings
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/admin/class-wicket-settings-page.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/admin/class-wicket-uuid-repair.php';
+        require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/admin/class-wicket-uuid-audit.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/admin/class-hide-utilities-for-users.php';
         
         // Frontend

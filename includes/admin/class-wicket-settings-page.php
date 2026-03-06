@@ -67,14 +67,15 @@ function myies_admin_menu() {
         'myies_surecart_mapping_page'
     );
 
-    // UUID Repair submenu
+
+    // UUID Audit submenu
     add_submenu_page(
         'myies-controls',
-        __('UUID Repair', 'wicket-integration'),
-        __('UUID Repair', 'wicket-integration'),
+        __('UUID Audit', 'wicket-integration'),
+        __('UUID Audit', 'wicket-integration'),
         'manage_options',
-        'myies-uuid-repair',
-        'myies_uuid_repair_page'
+        'myies-uuid-audit',
+        'myies_uuid_audit_page'
     );
 
     // Updates submenu
@@ -88,6 +89,16 @@ function myies_admin_menu() {
     );
 }
 add_action('admin_menu', 'myies_admin_menu');
+
+/**
+ * UUID Audit page callback
+ */
+function myies_uuid_audit_page() {
+    if (class_exists('Wicket_UUID_Audit')) {
+        $audit = new Wicket_UUID_Audit();
+        $audit->render_page();
+    }
+}
 
 /**
  * API Configuration page callback
@@ -176,13 +187,6 @@ function myies_surecart_mapping_page() {
     <?php
 }
 
-/**
- * UUID Repair page callback
- */
-function myies_uuid_repair_page() {
-    $repair = new Wicket_UUID_Repair();
-    $repair->render_page();
-}
 
 /**
  * Updates page callback

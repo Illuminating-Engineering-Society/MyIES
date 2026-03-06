@@ -595,7 +595,10 @@ class WicketBulkSync {
         }
 
         // UUID is the stable identifier — always prefer it over email.
-        $wicket_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+        $wicket_uuid = get_user_meta($user_id, 'wicket_person_uuid', true);
+        if (empty($wicket_uuid)) {
+            $wicket_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+        }
 
         if (!empty($wicket_uuid)) {
             $result = $this->wicket_sync->sync_wicket_person_to_acf($wicket_uuid, $user_id, $tenant, $api_secret_key, $admin_user_uuid);

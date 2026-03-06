@@ -168,9 +168,9 @@ class Wicket_Membership_Service {
         }
 
         // Check if we already have the UUID stored
-        $existing_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+        $existing_uuid = get_user_meta($user_id, 'wicket_person_uuid', true);
         if (empty($existing_uuid)) {
-            $existing_uuid = get_user_meta($user_id, 'wicket_person_uuid', true);
+            $existing_uuid = get_user_meta($user_id, 'wicket_uuid', true);
         }
         if (!empty($existing_uuid)) {
             return $existing_uuid;
@@ -180,17 +180,21 @@ class Wicket_Membership_Service {
             return new WP_Error('no_email', 'WP user has no email — cannot search Wicket');
         }
 
-        // Search for person by email
+        // Search for person by primary email
         $search = $this->request(
-            '/people?filter[emails_address_eq]=' . urlencode($user->user_email)
+            '/people?filter[emails_address_eq]=' . urlencode($user->user_email) . '&filter[emails_unique_eq]=true'
         );
 
         if (is_wp_error($search)) {
             return $search;
         }
 
-        if (!empty($search['data'][0]['id'])) {
-            update_user_meta($user_id, 'wicket_uuid', $search['data'][0]['id']);
+        if (!empty($search['data'])) {
+            if (count($search['data']) > 1) {
+                error_log("[SureCart-Wicket] WARNING: Email '{$user->user_email}' matched " . count($search['data']) . " people even with primary-email filter — refusing to assign for user {$user_id}");
+                return new WP_Error('ambiguous_email', 'Multiple Wicket people matched this primary email');
+            }
+            update_user_meta($user_id, 'wicket_person_uuid', $search['data'][0]['id']);
             return $search['data'][0]['id'];
         }
 
@@ -229,7 +233,7 @@ class Wicket_Membership_Service {
             return $res;
         }
 
-        update_user_meta($user_id, 'wicket_uuid', $res['data']['id']);
+        update_user_meta($user_id, 'wicket_person_uuid', $res['data']['id']);
         return $res['data']['id'];
     }
 

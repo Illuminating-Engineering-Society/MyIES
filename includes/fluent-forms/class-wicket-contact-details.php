@@ -54,7 +54,10 @@ class Wicket_Contact_Details_Handler {
         }
         
         // Get person UUID from user meta
-        $person_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+        $person_uuid = get_user_meta($user_id, 'wicket_person_uuid', true);
+        if (empty($person_uuid)) {
+            $person_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+        }
         if (empty($person_uuid)) {
             error_log('Wicket Contact Details: No Wicket UUID found for user ' . $user_id);
             return;

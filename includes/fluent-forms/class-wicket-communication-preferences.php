@@ -287,9 +287,12 @@ function handle_fluent_forms_wicket_comm_prefs($entry_id, $form_data, $form) {
     error_log('Wicket Communication Preferences: User ID: ' . $user_id);
     
     // Get person UUID
-    $person_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+    $person_uuid = get_user_meta($user_id, 'wicket_person_uuid', true);
     if (empty($person_uuid)) {
-        error_log('Wicket Communication Preferences: No wicket_uuid for user');
+        $person_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+    }
+    if (empty($person_uuid)) {
+        error_log('Wicket Communication Preferences: No wicket_person_uuid for user');
         return;
     }
     

@@ -161,7 +161,10 @@ class WicketLoginSync {
 
         // UUID is the stable identifier — always prefer it over email.
         // Email lookup is only a fallback for users who don't have a UUID yet.
-        $wicket_uuid = get_user_meta($user->ID, 'wicket_uuid', true);
+        $wicket_uuid = get_user_meta($user->ID, 'wicket_person_uuid', true);
+        if (empty($wicket_uuid)) {
+            $wicket_uuid = get_user_meta($user->ID, 'wicket_uuid', true);
+        }
 
         if (!empty($wicket_uuid)) {
             $result = $this->sync_user_by_uuid($wicket_uuid, $user->ID, $config);
@@ -235,7 +238,7 @@ class WicketLoginSync {
             ? "https://{$config['tenant']}-api.staging.wicketcloud.com"
             : "https://{$config['tenant']}-api.wicketcloud.com";
             
-        $api_url = $base_url . "/people?filter[emails_address_eq]=" . urlencode($email) . "&include=addresses,phones,emails";
+        $api_url = $base_url . "/people?filter[emails_address_eq]=" . urlencode($email) . "&filter[emails_unique_eq]=true&include=addresses,phones,emails";
         
         // Make API request
         $response = $this->make_api_request($api_url, $jwt_token);
@@ -254,7 +257,10 @@ class WicketLoginSync {
 
         // If this WP user already has a UUID, only accept a match for that UUID.
         // This prevents email collisions from overwriting the wrong user.
-        $existing_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+        $existing_uuid = get_user_meta($user_id, 'wicket_person_uuid', true);
+        if (empty($existing_uuid)) {
+            $existing_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+        }
         $person = null;
 
         if (!empty($existing_uuid)) {
@@ -269,9 +275,10 @@ class WicketLoginSync {
                 return new WP_Error('uuid_mismatch', 'Email lookup found a different person than the stored UUID');
             }
         } else {
-            // No UUID stored yet — warn if multiple results but use the first one.
+            // No UUID stored yet — refuse if multiple results to prevent wrong assignment.
             if (count($people) > 1) {
-                error_log("Wicket Sync: WARNING — Email search for '{$email}' returned " . count($people) . " people, using first result. Verify this is correct.");
+                error_log("Wicket Sync: WARNING — Email search for '{$email}' returned " . count($people) . " people even with primary-email filter — refusing to assign for user {$user_id}");
+                return new WP_Error('ambiguous_email', "Email '{$email}' matched multiple Wicket people — cannot safely assign");
             }
             $person = $people[0];
         }
@@ -442,7 +449,7 @@ class WicketLoginSync {
         // UPDATED: Field mapping - expanded with new fields
         $field_mapping = array(
             // Core identity fields
-            'uuid' => 'wicket_uuid',
+            'uuid' => 'wicket_person_uuid',
             'given_name' => 'first_name',
             'family_name' => 'last_name',
             'full_name' => 'wicket_full_name',

@@ -260,8 +260,8 @@ function wicket_find_person_by_email_additional_info($email) {
     
     $api_url = wicket_get_api_url_additional_info();
     
-    // Search for person by email
-    $response = wp_remote_get($api_url . '/people?filter[emails_address_eq]=' . urlencode($email), array(
+    // Search for person by primary email
+    $response = wp_remote_get($api_url . '/people?filter[emails_address_eq]=' . urlencode($email) . '&filter[emails_unique_eq]=true', array(
         'headers' => array(
             'Authorization' => 'Bearer ' . $token,
             'Content-Type' => 'application/json',
@@ -269,20 +269,23 @@ function wicket_find_person_by_email_additional_info($email) {
         ),
         'timeout' => 30
     ));
-    
+
     if (is_wp_error($response)) {
         error_log('Wicket Additional Info: Failed to search person - ' . $response->get_error_message());
         return null;
     }
-    
+
     $status_code = wp_remote_retrieve_response_code($response);
     $body = json_decode(wp_remote_retrieve_body($response), true);
-    
+
     if ($status_code === 200 && !empty($body['data']) && is_array($body['data'])) {
-        // Return the first person found
+        if (count($body['data']) > 1) {
+            error_log("Wicket Additional Info: WARNING — Email '{$email}' matched " . count($body['data']) . " people even with primary-email filter — refusing to assign");
+            return null;
+        }
         return $body['data'][0]['id'] ?? null;
     }
-    
+
     return null;
 }
 

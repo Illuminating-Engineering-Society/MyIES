@@ -136,8 +136,11 @@ class Wicket_Person_Auto_Create {
     public function create_wicket_person_on_registration($user_id) {
         error_log("Wicket Person Auto-Create: New user registered - User ID: {$user_id}");
         
-        // Check if person already exists in Wicket
+        // Check if person already exists in Wicket (check both meta keys)
         $existing_person_uuid = get_user_meta($user_id, 'wicket_person_uuid', true);
+        if (empty($existing_person_uuid)) {
+            $existing_person_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+        }
         if ($existing_person_uuid) {
             error_log("Wicket Person Auto-Create: User {$user_id} already has person UUID: {$existing_person_uuid}");
             return;
@@ -154,17 +157,21 @@ class Wicket_Person_Auto_Create {
             return;
         }
 
-        // Try to find existing person by email first
+        // Try to find existing person by primary email first
         error_log("Wicket Person Auto-Create: Searching for person by email: {$user->user_email}");
-        $search_response = $this->wicket_api_request("/people?filter[emails_address_eq]=" . urlencode($user->user_email));
-        
+        $search_response = $this->wicket_api_request("/people?filter[emails_address_eq]=" . urlencode($user->user_email) . "&filter[emails_unique_eq]=true");
+
         if (!is_wp_error($search_response) && !empty($search_response['data'])) {
-            $person_uuid = $search_response['data'][0]['id'];
-            update_user_meta($user_id, 'wicket_person_uuid', $person_uuid);
-            error_log("Wicket Person Auto-Create: Found existing person {$person_uuid} for user {$user_id}");
-            return;
+            if (count($search_response['data']) > 1) {
+                error_log("Wicket Person Auto-Create: WARNING — Email '{$user->user_email}' matched " . count($search_response['data']) . " people even with primary-email filter — refusing to assign for user {$user_id}");
+            } else {
+                $person_uuid = $search_response['data'][0]['id'];
+                update_user_meta($user_id, 'wicket_person_uuid', $person_uuid);
+                error_log("Wicket Person Auto-Create: Found existing person {$person_uuid} for user {$user_id}");
+                return;
+            }
         }
-        
+
         // Person doesn't exist - create new one
         error_log("Wicket Person Auto-Create: Creating new person for user {$user_id}");
         
@@ -223,13 +230,17 @@ class Wicket_Person_Auto_Create {
             $error_data = $create_response->get_error_data();
             if (isset($error_data['status']) && $error_data['status'] == 409) {
                 error_log('Wicket Person Auto-Create: Email conflict (409) - trying to find existing person again');
-                // Try one more time to find the person
-                $search_again = $this->wicket_api_request("/people?filter[emails_address_eq]=" . urlencode($user->user_email));
+                // Try one more time to find the person by primary email
+                $search_again = $this->wicket_api_request("/people?filter[emails_address_eq]=" . urlencode($user->user_email) . "&filter[emails_unique_eq]=true");
                 if (!is_wp_error($search_again) && !empty($search_again['data'])) {
-                    $person_uuid = $search_again['data'][0]['id'];
-                    update_user_meta($user_id, 'wicket_person_uuid', $person_uuid);
-                    error_log("Wicket Person Auto-Create: Found person after conflict: {$person_uuid}");
-                    return;
+                    if (count($search_again['data']) > 1) {
+                        error_log("Wicket Person Auto-Create: WARNING — 409 retry: Email '{$user->user_email}' matched " . count($search_again['data']) . " people — refusing to assign for user {$user_id}");
+                    } else {
+                        $person_uuid = $search_again['data'][0]['id'];
+                        update_user_meta($user_id, 'wicket_person_uuid', $person_uuid);
+                        error_log("Wicket Person Auto-Create: Found person after conflict: {$person_uuid}");
+                        return;
+                    }
                 }
             }
             
@@ -250,7 +261,10 @@ class Wicket_Person_Auto_Create {
      */
     public function sync_person_on_profile_update($user_id, $old_user_data) {
         $person_uuid = get_user_meta($user_id, 'wicket_person_uuid', true);
-        
+        if (empty($person_uuid)) {
+            $person_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+        }
+
         // If no person exists, try to create one
         if (!$person_uuid) {
             error_log("Wicket Person Auto-Create: Profile updated for user {$user_id} but no person exists - creating now");
@@ -317,6 +331,9 @@ function wicket_create_person_for_user($user_id) {
     
     // Return the person UUID if successful
     $person_uuid = get_user_meta($user_id, 'wicket_person_uuid', true);
+    if (empty($person_uuid)) {
+        $person_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+    }
     if ($person_uuid) {
         return $person_uuid;
     }

@@ -106,7 +106,7 @@ class Wicket_Memberships_Bricks_Tags {
         
         // SureCart Product URL
         $tags[] = ['name' => '{wicket_membership:person_product_url}', 'label' => 'Person Membership: SureCart Product URL', 'group' => $group];
-        $tags[] = ['name' => '{wicket_membership:person_expires_soon}', 'label' => 'Person Membership: Expires Within 30 Days (1/empty)', 'group' => $group];
+        $tags[] = ['name' => '{wicket_membership:person_expires_soon}', 'label' => 'Person Membership: Expires Within 90 Days (1/empty)', 'group' => $group];
         return $tags;
     }
     
@@ -228,7 +228,7 @@ class Wicket_Memberships_Bricks_Tags {
                 $now = current_time('timestamp');
                 $days_remaining = ($ends_at - $now) / DAY_IN_SECONDS;
 
-                return $days_remaining <= 30 ? '1' : '';
+                return $days_remaining <= 90 ? '1' : '';
                 
             default:
                 return '';

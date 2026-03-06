@@ -211,9 +211,10 @@ class WicketACFSync {
                     }
                 });
             });
+
         });
         ";
-        
+
         wp_add_inline_script('wicket-sync-ajax', $script);
     }
     
@@ -273,17 +274,20 @@ class WicketACFSync {
         // Attempt to sync by email first
         error_log('Attempting sync by email: ' . $user->user_email);
         $result = $this->sync_wicket_person_by_email($user->user_email, $user_id, $tenant, $api_secret_key, $admin_user_uuid);
-        
+
         // If email sync fails, try by Wicket UUID if it exists
         if (is_wp_error($result)) {
             error_log('Email sync failed: ' . $result->get_error_message());
-            $wicket_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+            $wicket_uuid = get_user_meta($user_id, 'wicket_person_uuid', true);
+            if (empty($wicket_uuid)) {
+                $wicket_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+            }
             if (!empty($wicket_uuid)) {
                 error_log('Attempting sync by UUID: ' . $wicket_uuid);
                 $result = $this->sync_wicket_person_to_acf($wicket_uuid, $user_id, $tenant, $api_secret_key, $admin_user_uuid);
             }
         }
-        
+
         if (is_wp_error($result)) {
             error_log('Final sync result failed: ' . $result->get_error_message());
             wp_send_json_error(array('message' => $result->get_error_message()));
@@ -291,13 +295,16 @@ class WicketACFSync {
 
             // Update last sync timestamp
             update_user_meta($user_id, 'wicket_last_sync', current_time('mysql'));
-            
+
             // Sync organization and section via WicketLoginSync if available
-            $person_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+            $person_uuid = get_user_meta($user_id, 'wicket_person_uuid', true);
+            if (empty($person_uuid)) {
+                $person_uuid = get_user_meta($user_id, 'wicket_uuid', true);
+            }
 
             if (!empty($person_uuid) && isset($GLOBALS['wicket_login_sync_instance'])) {
                 $login_sync = $GLOBALS['wicket_login_sync_instance'];
-                
+
                 // Sync company
                 if (method_exists($login_sync, 'sync_user_organization_public')) {
                     $org_result = $login_sync->sync_user_organization_public($user_id, $person_uuid);
@@ -305,7 +312,7 @@ class WicketACFSync {
                         $result['saved_fields'] = array_merge($result['saved_fields'], $org_result['saved_fields']);
                     }
                 }
-                
+
                 // Sync section
                 if (method_exists($login_sync, 'sync_user_section_public')) {
                     $section_result = $login_sync->sync_user_section_public($user_id, $person_uuid);
@@ -532,7 +539,7 @@ class WicketACFSync {
         // =============================================================
         $field_mapping = array(
             // Core identity fields
-            'uuid' => 'wicket_uuid',
+            'uuid' => 'wicket_person_uuid',
             'given_name' => 'wicket_given_name',
             'family_name' => 'wicket_family_name',
             'full_name' => 'wicket_full_name',
@@ -728,10 +735,10 @@ class WicketACFSync {
         // JWT header
         $is_staging = get_option('wicket_staging', 0);
 
-        // Determine the API URL based on staging setting - UPDATED: added includes
-        $api_url = $is_staging 
-            ? "https://{$tenant}-api.staging.wicketcloud.com/people?filter[emails_address_eq]=" . urlencode($email) . "&include=addresses,phones,emails"
-            : "https://{$tenant}-api.wicketcloud.com/people?filter[emails_address_eq]=" . urlencode($email) . "&include=addresses,phones,emails";
+        // Determine the API URL based on staging setting - UPDATED: added includes + primary email filter
+        $api_url = $is_staging
+            ? "https://{$tenant}-api.staging.wicketcloud.com/people?filter[emails_address_eq]=" . urlencode($email) . "&filter[emails_unique_eq]=true&include=addresses,phones,emails"
+            : "https://{$tenant}-api.wicketcloud.com/people?filter[emails_address_eq]=" . urlencode($email) . "&filter[emails_unique_eq]=true&include=addresses,phones,emails";
         
         $args = array(
             'headers' => array(
@@ -760,7 +767,13 @@ class WicketACFSync {
         if (!isset($data['data']) || empty($data['data'])) {
             return new WP_Error('person_not_found', 'No person found with the provided email address');
         }
-        
+
+        // Guard against multiple results
+        if (count($data['data']) > 1) {
+            error_log("[WicketACFSync] WARNING: Email '{$email}' matched " . count($data['data']) . " people even with primary-email filter — refusing to assign for user {$user_id}");
+            return new WP_Error('ambiguous_email', "Email '{$email}' matched multiple Wicket people — cannot safely assign");
+        }
+
         // Get the first person found
         $person = $data['data'][0];
         $person_uuid = $person['attributes']['uuid'];

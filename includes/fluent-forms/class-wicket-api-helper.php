@@ -123,7 +123,7 @@ class Wicket_API_Helper {
         }
         
         $person_uuid = get_user_meta($user_id, 'wicket_person_uuid', true);
-        
+
         if (empty($person_uuid)) {
             $person_uuid = get_user_meta($user_id, 'wicket_uuid', true);
         }
@@ -156,8 +156,8 @@ class Wicket_API_Helper {
             return null;
         }
         
-        $endpoint = $this->get_api_url() . '/people?filter[emails_address_eq]=' . urlencode($email);
-        
+        $endpoint = $this->get_api_url() . '/people?filter[emails_address_eq]=' . urlencode($email) . '&filter[emails_unique_eq]=true';
+
         $response = wp_remote_get($endpoint, array(
             'headers' => array(
                 'Authorization' => 'Bearer ' . $token,
@@ -166,18 +166,22 @@ class Wicket_API_Helper {
             ),
             'timeout' => 30
         ));
-        
+
         if (is_wp_error($response)) {
             return null;
         }
-        
+
         $status_code = wp_remote_retrieve_response_code($response);
         $body = json_decode(wp_remote_retrieve_body($response), true);
-        
-        if ($status_code === 200 && !empty($body['data'][0]['id'])) {
+
+        if ($status_code === 200 && !empty($body['data'])) {
+            if (count($body['data']) > 1) {
+                error_log("[Wicket API Helper] WARNING: Email '{$email}' matched " . count($body['data']) . " people even with primary-email filter — refusing to assign");
+                return null;
+            }
             return $body['data'][0]['id'];
         }
-        
+
         return null;
     }
     

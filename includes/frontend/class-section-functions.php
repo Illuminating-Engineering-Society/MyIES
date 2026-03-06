@@ -212,7 +212,7 @@ class Wicket_Section_Functions {
      * @param int|null $user_id User ID (defaults to current user)
      * @return array|null Section data or null if none
      */
-    public function get_user_section($user_id = null) {
+    public function get_user_section($user_id = null) {//ebracewell@murray.utah.gov
         if ($user_id === null) {
             $user_id = get_current_user_id();
         }

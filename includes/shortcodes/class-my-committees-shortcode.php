@@ -56,9 +56,9 @@ class MyIES_My_Committees_Shortcode {
 		}
 
 		$user_id     = get_current_user_id();
-		$person_uuid = get_user_meta( $user_id, 'wicket_uuid', true );
+		$person_uuid = get_user_meta( $user_id, 'wicket_person_uuid', true );
 		if ( empty( $person_uuid ) ) {
-			$person_uuid = get_user_meta( $user_id, 'wicket_person_uuid', true );
+			$person_uuid = get_user_meta( $user_id, 'wicket_uuid', true );
 		}
 
 		if ( empty( $person_uuid ) ) {
