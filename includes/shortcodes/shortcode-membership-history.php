@@ -81,7 +81,7 @@ class Wicket_Membership_History_Shortcode {
     /**
      * Check if a membership should show a renew button.
      *
-     * Returns true when the membership is expired or expires within 1 month.
+     * Returns true when the membership is expired or expires within 90 days.
      */
     private function should_show_renew($membership) {
         if (empty($membership['ends_at'])) {
@@ -89,9 +89,62 @@ class Wicket_Membership_History_Shortcode {
         }
 
         $ends_at = strtotime($membership['ends_at']);
-        $one_month_from_now = strtotime('+1 month');
+        $ninety_days_from_now = strtotime('+90 days');
 
-        return $ends_at <= $one_month_from_now;
+        return $ends_at <= $ninety_days_from_now;
+    }
+
+    /**
+     * Check if the current user has an active auto-renewing SureCart subscription
+     * for individual membership products.
+     */
+    private function check_individual_auto_renew() {
+        if ( ! class_exists( '\SureCart\Models\Customer' ) ) {
+            return false;
+        }
+
+        $current_user = wp_get_current_user();
+        if ( empty( $current_user->user_email ) ) {
+            return false;
+        }
+
+        try {
+            $customer = \SureCart\Models\Customer::where(
+                array( 'email' => $current_user->user_email )
+            )->first();
+
+            if ( ! $customer || ! isset( $customer->id ) ) {
+                return false;
+            }
+
+            $membership_product_ids = array(
+                '99014429-e2b1-4e83-808a-d6b43d3949b7', // Member Grade
+                '6ad2ba6c-4e93-4e19-9c83-8c35803f8f27', // Student
+                '76e203ae-c9c5-4302-9eff-d5f58d534219', // Emerging Professional
+            );
+
+            $subscriptions = \SureCart\Models\Subscription::where(
+                array(
+                    'customer_ids' => array( $customer->id ),
+                    'status'       => array( 'active', 'trialing' ),
+                    'expand'       => array( 'price', 'price.product' ),
+                )
+            )->get();
+
+            if ( ! empty( $subscriptions ) && is_array( $subscriptions ) ) {
+                foreach ( $subscriptions as $sub ) {
+                    if ( isset( $sub->price->product->id ) &&
+                        in_array( $sub->price->product->id, $membership_product_ids, true ) &&
+                        ! $sub->cancel_at_period_end ) {
+                        return true;
+                    }
+                }
+            }
+        } catch ( \Exception $e ) {
+            return false;
+        }
+
+        return false;
     }
 
     /**
@@ -138,6 +191,7 @@ class Wicket_Membership_History_Shortcode {
      * Render person membership history in Bricks grid style
      */
     private function render_person_grid($memberships) {
+        $is_auto_renewing = $this->check_individual_auto_renew();
         ob_start();
         ?>
         <?php if (empty($memberships)): ?>
@@ -186,15 +240,27 @@ class Wicket_Membership_History_Shortcode {
                     <div class="brxe-block ins-grid-desc">
                         <div class="brxe-block subs-stat">
                             <?php if ($this->should_show_renew($m)):
-                                $matched_key = $this->match_tier($m['membership_tier_name'], $this->individual_renew_urls);
-                                $renew_url = $matched_key ? $this->individual_renew_urls[$matched_key] : '';
-                                if ($renew_url):
-                            ?>
-                                <a class="brxe-button change-org-btn bricks-button bricks-background-primary"
-                                   href="<?php echo esc_url($renew_url); ?>">
-                                    <?php esc_html_e('Renew', 'wicket-integration'); ?>
-                                </a>
-                            <?php endif; endif; ?>
+                                if ($m['is_active'] && $is_auto_renewing):
+                                    $renew_date = !empty($m['ends_at'])
+                                        ? date_i18n(get_option('date_format'), strtotime($m['ends_at']))
+                                        : '';
+                                ?>
+                                    <span class="brxe-button change-org-btn bricks-button bricks-background-primary" style="pointer-events: none; opacity: 0.85;">
+                                        <?php
+                                        /* translators: %s: membership renewal date */
+                                        printf(esc_html__('Renews on %s', 'wicket-integration'), esc_html($renew_date));
+                                        ?>
+                                    </span>
+                                <?php else:
+                                    $matched_key = $this->match_tier($m['membership_tier_name'], $this->individual_renew_urls);
+                                    $renew_url = $matched_key ? $this->individual_renew_urls[$matched_key] : '';
+                                    if ($renew_url):
+                                ?>
+                                    <a class="brxe-button change-org-btn bricks-button bricks-background-primary"
+                                       href="<?php echo esc_url($renew_url); ?>">
+                                        <?php esc_html_e('Renew', 'wicket-integration'); ?>
+                                    </a>
+                                <?php endif; endif; endif; ?>
                         </div>
                     </div>
 
@@ -209,6 +275,7 @@ class Wicket_Membership_History_Shortcode {
      * Render organization membership history in Bricks grid style
      */
     private function render_org_grid($memberships) {
+        $is_auto_renewing = $this->check_individual_auto_renew();
         ob_start();
         ?>
         <?php if (empty($memberships)): ?>
@@ -261,15 +328,27 @@ class Wicket_Membership_History_Shortcode {
                     <div class="brxe-block ins-grid-desc">
                         <div class="brxe-block subs-stat">
                             <?php if ($this->should_show_renew($m)):
-                                $matched_key = $this->match_tier($m['membership_tier_name'], $this->org_renew_urls);
-                                $renew_url = $matched_key ? $this->org_renew_urls[$matched_key] : '';
-                                if ($renew_url):
-                            ?>
-                                <a class="brxe-button change-org-btn bricks-button bricks-background-primary"
-                                   href="<?php echo esc_url($renew_url); ?>">
-                                    <?php esc_html_e('Renew', 'wicket-integration'); ?>
-                                </a>
-                            <?php endif; endif; ?>
+                                if ($m['is_active'] && $is_auto_renewing):
+                                    $renew_date = !empty($m['ends_at'])
+                                        ? date_i18n(get_option('date_format'), strtotime($m['ends_at']))
+                                        : '';
+                                ?>
+                                    <span class="brxe-button change-org-btn bricks-button bricks-background-primary" style="pointer-events: none; opacity: 0.85;">
+                                        <?php
+                                        /* translators: %s: membership renewal date */
+                                        printf(esc_html__('Renews on %s', 'wicket-integration'), esc_html($renew_date));
+                                        ?>
+                                    </span>
+                                <?php else:
+                                    $matched_key = $this->match_tier($m['membership_tier_name'], $this->org_renew_urls);
+                                    $renew_url = $matched_key ? $this->org_renew_urls[$matched_key] : '';
+                                    if ($renew_url):
+                                ?>
+                                    <a class="brxe-button change-org-btn bricks-button bricks-background-primary"
+                                       href="<?php echo esc_url($renew_url); ?>">
+                                        <?php esc_html_e('Renew', 'wicket-integration'); ?>
+                                    </a>
+                                <?php endif; endif; endif; ?>
                         </div>
                     </div>
 

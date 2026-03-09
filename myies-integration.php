@@ -107,6 +107,7 @@ class Wicket_Integration {
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/fluent-forms/class-wicket-personal-details.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/fluent-forms/class-wicket-professional-info.php';
         require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/fluent-forms/class-wicket-add-address.php';
+        require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/fluent-forms/class-wicket-change-password.php';
         //require_once WICKET_INTEGRATION_PLUGIN_DIR . 'includes/fluent-forms/debug-fluent-forms-all.php';
     }
     

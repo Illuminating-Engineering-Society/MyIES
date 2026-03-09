@@ -120,6 +120,9 @@ function myies_api_settings_page() {
         if (isset($_POST['wicket_admin_user_uuid'])) {
             update_option('wicket_admin_user_uuid', sanitize_text_field($_POST['wicket_admin_user_uuid']));
         }
+        if (isset($_POST['myies_form_change_password'])) {
+            update_option('myies_form_change_password', absint($_POST['myies_form_change_password']));
+        }
         update_option('wicket_staging', isset($_POST['wicket_staging']) ? 1 : 0);
 
         echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__('Settings saved!', 'wicket-integration') . '</p></div>';
@@ -248,6 +251,13 @@ function wicket_render_api_settings_tab($tenant, $api_secret, $admin_uuid, $stag
                         <?php esc_html_e('Use Staging Environment', 'wicket-integration'); ?>
                     </label>
                     <p class="description"><?php esc_html_e('Check this box if using the staging environment', 'wicket-integration'); ?></p>
+                </td>
+            </tr>
+            <tr>
+                <th scope="row"><?php esc_html_e('Change Password Form ID', 'wicket-integration'); ?></th>
+                <td>
+                    <input type="number" name="myies_form_change_password" value="<?php echo esc_attr(get_option('myies_form_change_password', 0)); ?>" class="small-text" min="0" />
+                    <p class="description"><?php esc_html_e('Fluent Forms ID for the Change Password form (0 = disabled)', 'wicket-integration'); ?></p>
                 </td>
             </tr>
         </table>

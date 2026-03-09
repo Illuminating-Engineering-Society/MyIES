@@ -267,6 +267,92 @@ class Wicket_Membership_Service {
     }
 
     /**
+     * Find an existing person membership in Wicket by person + tier UUID.
+     *
+     * Returns the most recent matching entry (preferring active ones), or null.
+     *
+     * @return array|null  ['id' => person_membership_uuid, 'starts_at' => ..., 'ends_at' => ...]
+     */
+    public function find_person_membership_by_tier(string $person_uuid, string $tier_uuid): ?array {
+        $res = $this->request("/people/{$person_uuid}/membership_entries?include=membership&page[size]=100");
+
+        if (is_wp_error($res) || empty($res['data'])) {
+            return null;
+        }
+
+        $best = null;
+        foreach ($res['data'] as $entry) {
+            // Skip org membership assignments
+            if (!empty($entry['relationships']['organization_membership']['data'])) {
+                continue;
+            }
+
+            $entry_tier = $entry['relationships']['membership']['data']['id'] ?? null;
+            if ($entry_tier !== $tier_uuid) {
+                continue;
+            }
+
+            $ends_at = $entry['attributes']['ends_at'] ?? null;
+
+            // Prefer active (ends_at in the future or null) over expired
+            if ($best === null) {
+                $best = $entry;
+            } elseif ($ends_at && strtotime($ends_at) > time()) {
+                $best = $entry; // active entry wins
+            }
+        }
+
+        if (!$best) {
+            return null;
+        }
+
+        return [
+            'id'        => $best['id'],
+            'starts_at' => $best['attributes']['starts_at'] ?? null,
+            'ends_at'   => $best['attributes']['ends_at'] ?? null,
+        ];
+    }
+
+    /**
+     * Find an existing organization membership in Wicket by org + tier UUID.
+     *
+     * @return array|null  ['id' => org_membership_uuid, 'starts_at' => ..., 'ends_at' => ...]
+     */
+    public function find_org_membership_by_tier(string $org_uuid, string $tier_uuid): ?array {
+        $res = $this->request("/organizations/{$org_uuid}/membership_entries?include=membership&page[size]=100");
+
+        if (is_wp_error($res) || empty($res['data'])) {
+            return null;
+        }
+
+        $best = null;
+        foreach ($res['data'] as $entry) {
+            $entry_tier = $entry['relationships']['membership']['data']['id'] ?? null;
+            if ($entry_tier !== $tier_uuid) {
+                continue;
+            }
+
+            $ends_at = $entry['attributes']['ends_at'] ?? null;
+
+            if ($best === null) {
+                $best = $entry;
+            } elseif ($ends_at && strtotime($ends_at) > time()) {
+                $best = $entry;
+            }
+        }
+
+        if (!$best) {
+            return null;
+        }
+
+        return [
+            'id'        => $best['id'],
+            'starts_at' => $best['attributes']['starts_at'] ?? null,
+            'ends_at'   => $best['attributes']['ends_at'] ?? null,
+        ];
+    }
+
+    /**
      * Create a membership entry in Wicket
      */
     public function create_membership(
@@ -556,6 +642,42 @@ class SureCart_Wicket_Sync {
 
         $map[$tier_uuid] = $org_membership_uuid;
         update_user_meta($user_id, 'wicket_org_membership_uuid', wp_json_encode($map));
+    }
+
+    /**
+     * Get the organization UUID associated with a sustaining membership tier.
+     * Used to detect org changes on re-purchase.
+     */
+    private static function get_sustaining_org_uuid(int $user_id, string $tier_uuid): ?string {
+        $raw = get_user_meta($user_id, 'wicket_sustaining_org_map', true);
+        if (empty($raw)) {
+            return null;
+        }
+
+        $map = json_decode($raw, true);
+        if (is_array($map)) {
+            return $map[$tier_uuid] ?? null;
+        }
+
+        return null;
+    }
+
+    /**
+     * Store the organization UUID associated with a sustaining membership tier.
+     */
+    private static function set_sustaining_org_uuid(int $user_id, string $tier_uuid, string $org_uuid): void {
+        $raw = get_user_meta($user_id, 'wicket_sustaining_org_map', true);
+        $map = [];
+
+        if (!empty($raw)) {
+            $decoded = json_decode($raw, true);
+            if (is_array($decoded)) {
+                $map = $decoded;
+            }
+        }
+
+        $map[$tier_uuid] = $org_uuid;
+        update_user_meta($user_id, 'wicket_sustaining_org_map', wp_json_encode($map));
     }
 
     /**
@@ -982,14 +1104,50 @@ class SureCart_Wicket_Sync {
     }
 
     /**
-     * Sync an individual (person) membership to Wicket
+     * Sync an individual (person) membership to Wicket.
+     *
+     * If the person already has a membership for this tier (found locally or
+     * via API), the existing membership is EXTENDED (ends_at pushed forward)
+     * rather than replaced or duplicated.
      */
     private function sync_individual_membership($svc, $user_id, $person_uuid, $wicket_membership_uuid, $starts_at, $ends_at) {
-        $existing = self::get_person_membership_uuid($user_id, $wicket_membership_uuid);
+        // Calculate the purchased period duration (used for extension)
+        $period_seconds = ($starts_at && $ends_at)
+            ? strtotime($ends_at) - strtotime($starts_at)
+            : YEAR_IN_SECONDS;
 
-        if ($existing) {
-            error_log('[SURECART-WICKET] Updating existing individual membership: ' . $existing . ' (tier: ' . $wicket_membership_uuid . ')');
-            $res = $svc->update_membership($existing, $starts_at, $ends_at);
+        // 1. Fast path: check local meta for existing person_membership UUID
+        $existing_uuid = self::get_person_membership_uuid($user_id, $wicket_membership_uuid);
+        $existing_ends_at = null;
+
+        // 2. API fallback: if no local UUID, query Wicket for existing membership
+        if (!$existing_uuid) {
+            error_log('[SURECART-WICKET] No local person_membership UUID for tier ' . $wicket_membership_uuid . ', querying Wicket API');
+            $api_entry = $svc->find_person_membership_by_tier($person_uuid, $wicket_membership_uuid);
+
+            if ($api_entry) {
+                $existing_uuid = $api_entry['id'];
+                $existing_ends_at = $api_entry['ends_at'];
+
+                // Backfill the local meta so future lookups are fast
+                self::set_person_membership_uuid($user_id, $wicket_membership_uuid, $existing_uuid);
+                error_log('[SURECART-WICKET] Found existing membership via API: ' . $existing_uuid . ' (ends_at: ' . ($existing_ends_at ?: 'null') . ')');
+            }
+        }
+
+        if ($existing_uuid) {
+            // Fetch current ends_at from Wicket if we don't have it yet (local-meta path)
+            if ($existing_ends_at === null) {
+                $api_entry = $svc->find_person_membership_by_tier($person_uuid, $wicket_membership_uuid);
+                $existing_ends_at = $api_entry['ends_at'] ?? null;
+            }
+
+            // Extend: add period to whichever is later — existing end date or now
+            $base_time = max(strtotime($existing_ends_at ?: 'now'), time());
+            $new_ends_at = date('c', $base_time + $period_seconds);
+
+            error_log('[SURECART-WICKET] Extending existing membership ' . $existing_uuid . ': existing_ends_at=' . ($existing_ends_at ?: 'null') . ', new_ends_at=' . $new_ends_at);
+            $res = $svc->update_membership($existing_uuid, null, $new_ends_at);
         } else {
             error_log('[SURECART-WICKET] Creating new individual membership for tier: ' . $wicket_membership_uuid);
             $res = $svc->create_membership($person_uuid, $wicket_membership_uuid, $starts_at, $ends_at);
@@ -1017,12 +1175,19 @@ class SureCart_Wicket_Sync {
     /**
      * Sync a sustaining (organization) membership to Wicket.
      *
-     * 1. Reads the org_uuid the user selected before checkout (stored in transient).
-     * 2. Creates an organization_membership in Wicket (membership written to the org).
-     * 3. Ensures a person-to-org connection exists.
-     * 4. Assigns "Company - Primary Contact" and "Company - Billing Contact" roles to the person.
+     * If the organization already has a membership for this tier, it is
+     * EXTENDED (ends_at pushed forward) rather than duplicated.
+     *
+     * On first creation it also:
+     * - Ensures a person-to-org connection exists.
+     * - Assigns "Company - Primary Contact" and "Company - Billing Contact" roles.
      */
     private function sync_sustaining_membership($svc, $user_id, $person_uuid, $wicket_membership_uuid, $starts_at, $ends_at) {
+        // Calculate the purchased period duration (used for extension)
+        $period_seconds = ($starts_at && $ends_at)
+            ? strtotime($ends_at) - strtotime($starts_at)
+            : YEAR_IN_SECONDS;
+
         // 1. Get the organization UUID from the pre-checkout selection
         $org_uuid = get_transient('myies_checkout_org_' . $user_id);
 
@@ -1038,54 +1203,94 @@ class SureCart_Wicket_Sync {
 
         error_log('[SURECART-WICKET] Sustaining membership for org: ' . $org_uuid);
 
-        // 2. Create organization membership in Wicket
-        $res = $svc->create_organization_membership(
-            $org_uuid,
-            $wicket_membership_uuid,
-            $person_uuid,
-            $starts_at,
-            $ends_at
-        );
+        // 2. Find existing org membership — local meta first, then API fallback
+        $existing_uuid = self::get_org_membership_uuid($user_id, $wicket_membership_uuid);
+        $stored_org = self::get_sustaining_org_uuid($user_id, $wicket_membership_uuid);
+        $existing_ends_at = null;
+
+        // API fallback if no local UUID, or if the org changed
+        if (!$existing_uuid || $stored_org !== $org_uuid) {
+            $api_entry = $svc->find_org_membership_by_tier($org_uuid, $wicket_membership_uuid);
+            if ($api_entry) {
+                $existing_uuid = $api_entry['id'];
+                $existing_ends_at = $api_entry['ends_at'];
+
+                // Backfill local meta
+                self::set_org_membership_uuid($user_id, $wicket_membership_uuid, $existing_uuid);
+                self::set_sustaining_org_uuid($user_id, $wicket_membership_uuid, $org_uuid);
+                error_log('[SURECART-WICKET] Found existing org membership via API: ' . $existing_uuid . ' (ends_at: ' . ($existing_ends_at ?: 'null') . ')');
+            } else {
+                // Different org with no existing membership — clear stale local UUID
+                $existing_uuid = null;
+            }
+        }
+
+        if ($existing_uuid) {
+            // Fetch current ends_at from Wicket if we don't have it yet
+            if ($existing_ends_at === null) {
+                $api_entry = $svc->find_org_membership_by_tier($org_uuid, $wicket_membership_uuid);
+                $existing_ends_at = $api_entry['ends_at'] ?? null;
+            }
+
+            // Extend: add period to whichever is later — existing end date or now
+            $base_time = max(strtotime($existing_ends_at ?: 'now'), time());
+            $new_ends_at = date('c', $base_time + $period_seconds);
+
+            error_log('[SURECART-WICKET] Extending existing org membership ' . $existing_uuid . ': existing_ends_at=' . ($existing_ends_at ?: 'null') . ', new_ends_at=' . $new_ends_at);
+            $res = $svc->update_organization_membership($existing_uuid, null, $new_ends_at);
+        } else {
+            error_log('[SURECART-WICKET] Creating new org membership for tier: ' . $wicket_membership_uuid);
+            $res = $svc->create_organization_membership(
+                $org_uuid,
+                $wicket_membership_uuid,
+                $person_uuid,
+                $starts_at,
+                $ends_at
+            );
+
+            if (!is_wp_error($res) && isset($res['data']['id'])) {
+                self::set_org_membership_uuid($user_id, $wicket_membership_uuid, $res['data']['id']);
+                self::set_sustaining_org_uuid($user_id, $wicket_membership_uuid, $org_uuid);
+                error_log('[SURECART-WICKET] Stored org membership UUID: ' . $res['data']['id'] . ' for tier: ' . $wicket_membership_uuid);
+            }
+
+            // 3. Ensure person-to-org connection exists (only on create)
+            if (!is_wp_error($res) && function_exists('wicket_api')) {
+                $api = wicket_api();
+                $api->create_person_org_connection($person_uuid, $org_uuid, 'employee', 'Sustaining membership owner', $starts_at, $ends_at);
+            }
+
+            // 4. Assign contact roles (only on create)
+            if (!is_wp_error($res)) {
+                $role_names = [
+                    'Company - Primary Contact',
+                    'Company - Billing Contact',
+                ];
+
+                $role_uuids = [];
+                foreach ($role_names as $name) {
+                    $uuid = $svc->get_role_uuid($name);
+                    if ($uuid) {
+                        $role_uuids[] = $uuid;
+                    } else {
+                        error_log('[SURECART-WICKET] Role not found in Wicket: ' . $name);
+                    }
+                }
+
+                if (!empty($role_uuids)) {
+                    $role_res = $svc->assign_roles($person_uuid, $role_uuids);
+                    if (is_wp_error($role_res)) {
+                        error_log('[SURECART-WICKET] Failed to assign roles: ' . $role_res->get_error_message());
+                    } else {
+                        error_log('[SURECART-WICKET] Roles assigned successfully');
+                    }
+                }
+            }
+        }
 
         if (is_wp_error($res)) {
-            error_log('[SURECART-WICKET] Failed to create org membership: ' . $res->get_error_message());
+            error_log('[SURECART-WICKET] Failed to sync org membership: ' . $res->get_error_message());
             return false;
-        }
-
-        if (isset($res['data']['id'])) {
-            self::set_org_membership_uuid($user_id, $wicket_membership_uuid, $res['data']['id']);
-            error_log('[SURECART-WICKET] Stored org membership UUID: ' . $res['data']['id'] . ' for tier: ' . $wicket_membership_uuid);
-        }
-
-        // 3. Ensure person-to-org connection exists (via existing API helper)
-        if (function_exists('wicket_api')) {
-            $api = wicket_api();
-            $api->create_person_org_connection($person_uuid, $org_uuid, 'employee', 'Sustaining membership owner', $starts_at, $ends_at);
-        }
-
-        // 4. Assign contact roles
-        $role_names = [
-            'Company - Primary Contact',
-            'Company - Billing Contact',
-        ];
-
-        $role_uuids = [];
-        foreach ($role_names as $name) {
-            $uuid = $svc->get_role_uuid($name);
-            if ($uuid) {
-                $role_uuids[] = $uuid;
-            } else {
-                error_log('[SURECART-WICKET] Role not found in Wicket: ' . $name);
-            }
-        }
-
-        if (!empty($role_uuids)) {
-            $role_res = $svc->assign_roles($person_uuid, $role_uuids);
-            if (is_wp_error($role_res)) {
-                error_log('[SURECART-WICKET] Failed to assign roles: ' . $role_res->get_error_message());
-            } else {
-                error_log('[SURECART-WICKET] Roles assigned successfully');
-            }
         }
 
         // Clean up the transient
@@ -1114,7 +1319,12 @@ class SureCart_Wicket_Sync {
     }
 
     /**
-     * REST endpoint for manual membership sync
+     * REST endpoint for manual membership sync.
+     *
+     * Params: user_id, product_id, ends_at (optional), org_uuid (required for sustaining).
+     *
+     * If an existing membership is found it is EXTENDED (ends_at pushed forward
+     * by the given period) rather than replaced or duplicated.
      */
     public function rest_sync_membership(WP_REST_Request $request) {
         $user_id = (int) $request->get_param('user_id');
@@ -1134,6 +1344,14 @@ class SureCart_Wicket_Sync {
         $wicket_membership_uuid = $product_mapping['membership_uuid'];
         $membership_type = $product_mapping['type'];
 
+        // Default extension period: 1 year (or from explicit ends_at param)
+        $period_seconds = $ends_at
+            ? strtotime($ends_at) - time()
+            : YEAR_IN_SECONDS;
+        if ($period_seconds <= 0) {
+            $period_seconds = YEAR_IN_SECONDS;
+        }
+
         try {
             $svc = new Wicket_Membership_Service();
         } catch (Exception $e) {
@@ -1145,14 +1363,92 @@ class SureCart_Wicket_Sync {
             return $person_uuid;
         }
 
-        $existing_person_membership_uuid = self::get_person_membership_uuid($user_id, $wicket_membership_uuid);
+        if ($membership_type === 'sustaining') {
+            $org_uuid = (string) $request->get_param('org_uuid');
+            if (empty($org_uuid)) {
+                $org_uuid = get_user_meta($user_id, 'wicket_primary_org_uuid', true);
+            }
+            if (empty($org_uuid)) {
+                return new WP_Error('missing_org', 'org_uuid is required for sustaining memberships', ['status' => 400]);
+            }
 
-        if ($existing_person_membership_uuid) {
-            $res = $svc->update_membership(
-                $existing_person_membership_uuid,
-                null,
-                $ends_at
-            );
+            // Find existing: local meta then API fallback
+            $existing_uuid = self::get_org_membership_uuid($user_id, $wicket_membership_uuid);
+            $existing_ends_at = null;
+
+            if (!$existing_uuid || self::get_sustaining_org_uuid($user_id, $wicket_membership_uuid) !== $org_uuid) {
+                $api_entry = $svc->find_org_membership_by_tier($org_uuid, $wicket_membership_uuid);
+                if ($api_entry) {
+                    $existing_uuid = $api_entry['id'];
+                    $existing_ends_at = $api_entry['ends_at'];
+                    self::set_org_membership_uuid($user_id, $wicket_membership_uuid, $existing_uuid);
+                    self::set_sustaining_org_uuid($user_id, $wicket_membership_uuid, $org_uuid);
+                } else {
+                    $existing_uuid = null;
+                }
+            }
+
+            if ($existing_uuid) {
+                if ($existing_ends_at === null) {
+                    $api_entry = $svc->find_org_membership_by_tier($org_uuid, $wicket_membership_uuid);
+                    $existing_ends_at = $api_entry['ends_at'] ?? null;
+                }
+
+                $base_time = max(strtotime($existing_ends_at ?: 'now'), time());
+                $new_ends_at = date('c', $base_time + $period_seconds);
+                $res = $svc->update_organization_membership($existing_uuid, null, $new_ends_at);
+            } else {
+                $res = $svc->create_organization_membership(
+                    $org_uuid,
+                    $wicket_membership_uuid,
+                    $person_uuid,
+                    null,
+                    $ends_at
+                );
+
+                if (!is_wp_error($res) && isset($res['data']['id'])) {
+                    self::set_org_membership_uuid($user_id, $wicket_membership_uuid, $res['data']['id']);
+                    self::set_sustaining_org_uuid($user_id, $wicket_membership_uuid, $org_uuid);
+                }
+            }
+
+            if (is_wp_error($res)) {
+                return $res;
+            }
+
+            if (function_exists('wicket_sync_user_memberships')) {
+                wicket_sync_user_memberships($user_id);
+            }
+
+            return [
+                'success' => true,
+                'person_uuid' => $person_uuid,
+                'org_membership_uuid' => self::get_org_membership_uuid($user_id, $wicket_membership_uuid),
+            ];
+        }
+
+        // Individual membership — find existing: local meta then API fallback
+        $existing_uuid = self::get_person_membership_uuid($user_id, $wicket_membership_uuid);
+        $existing_ends_at = null;
+
+        if (!$existing_uuid) {
+            $api_entry = $svc->find_person_membership_by_tier($person_uuid, $wicket_membership_uuid);
+            if ($api_entry) {
+                $existing_uuid = $api_entry['id'];
+                $existing_ends_at = $api_entry['ends_at'];
+                self::set_person_membership_uuid($user_id, $wicket_membership_uuid, $existing_uuid);
+            }
+        }
+
+        if ($existing_uuid) {
+            if ($existing_ends_at === null) {
+                $api_entry = $svc->find_person_membership_by_tier($person_uuid, $wicket_membership_uuid);
+                $existing_ends_at = $api_entry['ends_at'] ?? null;
+            }
+
+            $base_time = max(strtotime($existing_ends_at ?: 'now'), time());
+            $new_ends_at = date('c', $base_time + $period_seconds);
+            $res = $svc->update_membership($existing_uuid, null, $new_ends_at);
         } else {
             $res = $svc->create_membership(
                 $person_uuid,

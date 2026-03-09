@@ -112,6 +112,51 @@ class Lighting_Library_Shortcode {
     }
 
     /**
+     * Check if the current user has an active auto-renewing SureCart subscription
+     * for the Lighting Library product.
+     */
+    private function check_auto_renew_status() {
+        if (!class_exists('\SureCart\Models\Customer')) {
+            return false;
+        }
+
+        $current_user = wp_get_current_user();
+        if (empty($current_user->user_email)) {
+            return false;
+        }
+
+        try {
+            $customer = \SureCart\Models\Customer::where(
+                array('email' => $current_user->user_email)
+            )->first();
+
+            if (!$customer || !isset($customer->id)) {
+                return false;
+            }
+
+            $subscriptions = \SureCart\Models\Subscription::where(array(
+                'customer_ids' => array($customer->id),
+                'status'       => array('active', 'trialing'),
+                'expand'       => array('price', 'price.product'),
+            ))->get();
+
+            if (!empty($subscriptions) && is_array($subscriptions)) {
+                foreach ($subscriptions as $sub) {
+                    if (isset($sub->price->product->id) &&
+                        $sub->price->product->id === '407b341b-9af6-4ee2-a66f-489de951f847' &&
+                        !$sub->cancel_at_period_end) {
+                        return true;
+                    }
+                }
+            }
+        } catch (\Exception $e) {
+            return false;
+        }
+
+        return false;
+    }
+
+    /**
      * Find the Lighting Library Full Access membership from the user's memberships
      */
     private function find_lighting_library_membership($memberships) {
@@ -178,14 +223,40 @@ class Lighting_Library_Shortcode {
                         </div>
                     </div>
 
-                    <?php if (!$is_active) : ?>
+                    <?php
+                    // Show renew button within 90 days of expiration or if already expired.
+                    $show_renew = false;
+                    if (!empty($m['ends_at'])) {
+                        $ends_at_ts        = strtotime($m['ends_at']);
+                        $days_until_expiry = ($ends_at_ts - current_time('timestamp')) / DAY_IN_SECONDS;
+                        $show_renew        = ($days_until_expiry <= 90);
+                    } elseif (!$is_active) {
+                        $show_renew = true;
+                    }
+
+                    if ($show_renew) :
+                        // Check SureCart auto-renew status for Lighting Library product.
+                        $is_auto_renewing_ll = $this->check_auto_renew_status();
+                    ?>
                     <!-- Renew Button -->
                     <div class="brxe-block ins-grid-desc">
                         <div class="brxe-block subs-stat">
-                            <a class="brxe-button change-org-btn bricks-button bricks-background-primary"
-                               href="<?php echo esc_url($purchase_url); ?>">
-                                <?php esc_html_e('Renew', 'wicket-integration'); ?>
-                            </a>
+                            <?php if ($is_active && $is_auto_renewing_ll) : ?>
+                                <span class="brxe-button change-org-btn bricks-button bricks-background-primary" style="pointer-events: none; opacity: 0.85;">
+                                    <?php
+                                    $renew_date = !empty($m['ends_at'])
+                                        ? date_i18n(get_option('date_format'), strtotime($m['ends_at']))
+                                        : '';
+                                    /* translators: %s: membership renewal date */
+                                    printf(esc_html__('Renews on %s', 'wicket-integration'), esc_html($renew_date));
+                                    ?>
+                                </span>
+                            <?php else : ?>
+                                <a class="brxe-button change-org-btn bricks-button bricks-background-primary"
+                                   href="<?php echo esc_url($purchase_url); ?>">
+                                    <?php esc_html_e('Renew', 'wicket-integration'); ?>
+                                </a>
+                            <?php endif; ?>
                         </div>
                     </div>
                     <?php endif; ?>
