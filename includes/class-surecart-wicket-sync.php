@@ -380,6 +380,79 @@ class Wicket_Membership_Service {
     }
 
     /**
+     * Get the person_memberships assigned to an organization membership (seats).
+     *
+     * @return array  List of ['id' => person_membership_uuid, 'person_uuid' => ..., 'starts_at' => ..., 'ends_at' => ...]
+     */
+    public function get_org_membership_assignments(string $org_membership_uuid): array {
+        $res = $this->request("/organization_memberships/{$org_membership_uuid}/person_memberships?page[size]=100");
+
+        if (is_wp_error($res) || empty($res['data'])) {
+            return [];
+        }
+
+        $assignments = [];
+        foreach ($res['data'] as $entry) {
+            $ends_at = $entry['attributes']['ends_at'] ?? null;
+
+            // Only include active assignments
+            if ($ends_at && strtotime($ends_at) < time()) {
+                continue;
+            }
+
+            $assignments[] = [
+                'id'          => $entry['id'],
+                'person_uuid' => $entry['relationships']['person']['data']['id'] ?? null,
+                'starts_at'   => $entry['attributes']['starts_at'] ?? null,
+                'ends_at'     => $ends_at,
+            ];
+        }
+
+        return $assignments;
+    }
+
+    /**
+     * Assign a person to an organization membership (use a seat).
+     *
+     * @return array|WP_Error  API response or error
+     */
+    public function assign_person_to_org_membership(
+        string $person_uuid,
+        string $org_membership_uuid,
+        ?string $starts_at = null,
+        ?string $ends_at = null
+    ) {
+        $payload = [
+            'data' => [
+                'type' => 'person_memberships',
+                'attributes' => [
+                    'starts_at' => $starts_at ?: current_time('c'),
+                ],
+                'relationships' => [
+                    'person' => [
+                        'data' => [
+                            'type' => 'people',
+                            'id'   => $person_uuid,
+                        ],
+                    ],
+                    'organization_membership' => [
+                        'data' => [
+                            'type' => 'organization_memberships',
+                            'id'   => $org_membership_uuid,
+                        ],
+                    ],
+                ],
+            ],
+        ];
+
+        if ($ends_at) {
+            $payload['data']['attributes']['ends_at'] = $ends_at;
+        }
+
+        return $this->request('/person_memberships', 'POST', $payload);
+    }
+
+    /**
      * Create a membership entry in Wicket
      */
     public function create_membership(
@@ -1267,13 +1340,26 @@ class SureCart_Wicket_Sync {
             $res = $svc->update_organization_membership($existing_uuid, null, $new_ends_at);
         } else {
             // Deactivate any other active org memberships for this org (upgrade scenario)
+            // and collect their seated people for migration
             $active_memberships = $svc->find_all_active_org_memberships($org_uuid);
             $now = current_time('c');
+            $people_to_migrate = [];
 
             foreach ($active_memberships as $active_entry) {
                 // Skip if it's somehow the same tier we're about to create
                 if ($active_entry['tier_uuid'] === $wicket_membership_uuid) {
                     continue;
+                }
+
+                // Collect assigned people before deactivating
+                $old_assignments = $svc->get_org_membership_assignments($active_entry['id']);
+                if (!empty($old_assignments)) {
+                    error_log('[SURECART-WICKET] Found ' . count($old_assignments) . ' seated people on old membership ' . $active_entry['id']);
+                    foreach ($old_assignments as $assignment) {
+                        if (!empty($assignment['person_uuid'])) {
+                            $people_to_migrate[$assignment['person_uuid']] = true;
+                        }
+                    }
                 }
 
                 error_log('[SURECART-WICKET] Deactivating old org membership ' . $active_entry['id'] . ' (tier: ' . $active_entry['tier_uuid'] . ') for upgrade');
@@ -1294,9 +1380,38 @@ class SureCart_Wicket_Sync {
             );
 
             if (!is_wp_error($res) && isset($res['data']['id'])) {
-                self::set_org_membership_uuid($user_id, $wicket_membership_uuid, $res['data']['id']);
+                $new_org_membership_uuid = $res['data']['id'];
+                self::set_org_membership_uuid($user_id, $wicket_membership_uuid, $new_org_membership_uuid);
                 self::set_sustaining_org_uuid($user_id, $wicket_membership_uuid, $org_uuid);
-                error_log('[SURECART-WICKET] Stored org membership UUID: ' . $res['data']['id'] . ' for tier: ' . $wicket_membership_uuid);
+                error_log('[SURECART-WICKET] Stored org membership UUID: ' . $new_org_membership_uuid . ' for tier: ' . $wicket_membership_uuid);
+
+                // Migrate seated people from old membership(s) to the new one
+                if (!empty($people_to_migrate)) {
+                    $max_assignments = $res['data']['attributes']['max_assignments'] ?? null;
+                    $unlimited = $res['data']['attributes']['unlimited_assignments'] ?? false;
+                    $migrated = 0;
+
+                    error_log('[SURECART-WICKET] Migrating ' . count($people_to_migrate) . ' people to new org membership (max_assignments: ' . ($unlimited ? 'unlimited' : ($max_assignments ?: 'null')) . ')');
+
+                    foreach ($people_to_migrate as $migrate_person_uuid => $_) {
+                        // Respect seat limit
+                        if (!$unlimited && $max_assignments !== null && $migrated >= (int) $max_assignments) {
+                            error_log('[SURECART-WICKET] WARNING: Seat limit reached (' . $max_assignments . '). Could not migrate person: ' . $migrate_person_uuid);
+                            continue;
+                        }
+
+                        $assign_res = $svc->assign_person_to_org_membership($migrate_person_uuid, $new_org_membership_uuid, $starts_at, $ends_at);
+
+                        if (is_wp_error($assign_res)) {
+                            error_log('[SURECART-WICKET] Failed to migrate person ' . $migrate_person_uuid . ': ' . $assign_res->get_error_message());
+                        } else {
+                            $migrated++;
+                            error_log('[SURECART-WICKET] Migrated person ' . $migrate_person_uuid . ' to new org membership');
+                        }
+                    }
+
+                    error_log('[SURECART-WICKET] Migration complete: ' . $migrated . '/' . count($people_to_migrate) . ' people migrated');
+                }
             }
 
             // 3. Ensure person-to-org connection exists (only on create)
