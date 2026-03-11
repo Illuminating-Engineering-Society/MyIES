@@ -43,10 +43,9 @@
 	var allMembers    = [];
 	var currentPage   = 1;
 	var perPage       = 20;
-	var seatData      = null; // { has_membership, seated_persons, max_assignments, ... }
 
 	// =========================================================================
-	// Init — load members + seats
+	// Init — load members
 	// =========================================================================
 	loadMembers();
 
@@ -242,53 +241,19 @@
 	// =========================================================================
 	function loadMembers() {
 		$members.html('<p class="myies-orgmgmt__loading">Loading members...</p>');
-
-		// Fetch members and seats in parallel
-		var membersReq = $.post(cfg.ajaxUrl, {
+		$.post(cfg.ajaxUrl, {
 			action: 'myies_orgmgmt_get_members',
 			nonce:  cfg.nonce
-		});
-		var seatsReq = $.post(cfg.ajaxUrl, {
-			action: 'myies_orgmgmt_get_seats',
-			nonce:  cfg.nonce
-		});
-
-		$.when(membersReq, seatsReq).done(function (mRes, sRes) {
-			var membersData = mRes[0];
-			var seatsData   = sRes[0];
-
-			if (!membersData.success) {
+		}, function (res) {
+			if (!res.success) {
 				$members.html('<p class="myies-orgmgmt__error">Failed to load members.</p>');
 				return;
 			}
-
-			allMembers = membersData.data.members;
-			seatData   = (seatsData.success && seatsData.data.has_membership) ? seatsData.data : null;
-
-			renderSeatSummary();
+			allMembers = res.data.members;
 			renderMembers(allMembers, 1);
 		}).fail(function () {
 			$members.html('<p class="myies-orgmgmt__error">Request failed.</p>');
 		});
-	}
-
-	function renderSeatSummary() {
-		var $summary = $('#myies-orgmgmt-seat-summary');
-		if (!seatData) {
-			$summary.hide();
-			return;
-		}
-
-		var text;
-		if (seatData.unlimited_assignments) {
-			text = 'Seats: ' + Object.keys(seatData.seated_persons).length + ' assigned (unlimited)';
-		} else if (seatData.max_assignments) {
-			text = 'Seats: ' + Object.keys(seatData.seated_persons).length + ' / ' + seatData.max_assignments + ' assigned';
-		} else {
-			text = 'Seats: ' + Object.keys(seatData.seated_persons).length + ' assigned';
-		}
-
-		$summary.text(text).show();
 	}
 
 	function getFilteredMembers() {
@@ -315,12 +280,9 @@
 		var start = (page - 1) * perPage;
 		var pageItems = list.slice(start, start + perPage);
 
-		var showSeatCol = !!seatData;
-
 		var html = '<table class="myies-orgmgmt__table">' +
 			'<thead><tr>' +
 			'<th>Name</th><th>Email</th><th>Role</th>' +
-			(showSeatCol ? '<th>Seat</th>' : '') +
 			(canManage ? '<th></th>' : '') +
 			'</tr></thead><tbody>';
 
@@ -334,30 +296,10 @@
 			}
 			var roleStr = roles.join(', ') || '&mdash;';
 
-			var isSeated = seatData && seatData.seated_persons && seatData.seated_persons[m.person_uuid];
-
 			html += '<tr data-connection="' + escAttr(m.connection_uuid) + '">' +
 				'<td>' + escHtml(m.name) + (m.is_self ? ' <em>(you)</em>' : '') + '</td>' +
 				'<td>' + escHtml(m.email) + '</td>' +
 				'<td>' + roleStr + '</td>';
-
-			if (showSeatCol) {
-				html += '<td class="myies-orgmgmt__seat-cell">';
-				if (isSeated) {
-					html += '<span class="myies-orgmgmt__seat-badge myies-orgmgmt__seat-badge--active">Seated</span>';
-					if (canManage && !m.is_self) {
-						html += ' <button type="button" class="myies-orgmgmt__btn myies-orgmgmt__btn--small myies-orgmgmt__seat-toggle" ' +
-							'data-person="' + escAttr(m.person_uuid) + '" data-seat-action="remove">Remove Seat</button>';
-					}
-				} else {
-					html += '<span class="myies-orgmgmt__seat-badge myies-orgmgmt__seat-badge--empty">&mdash;</span>';
-					if (canManage && !m.is_self) {
-						html += ' <button type="button" class="myies-orgmgmt__btn myies-orgmgmt__btn--small myies-orgmgmt__seat-toggle" ' +
-							'data-person="' + escAttr(m.person_uuid) + '" data-seat-action="assign">Assign Seat</button>';
-					}
-				}
-				html += '</td>';
-			}
 
 			if (canManage) {
 				html += '<td>';
@@ -417,7 +359,10 @@
 			person_uuid:     personUuid
 		}, function (res) {
 			if (res.success) {
-				loadMembers(); // Refresh members and seats
+				allMembers = allMembers.filter(function (m) {
+					return m.connection_uuid !== connUuid;
+				});
+				renderMembers(getFilteredMembers(), currentPage);
 			} else {
 				alert(res.data.message || 'Error');
 				$btn.prop('disabled', false).text('Remove');
@@ -425,34 +370,6 @@
 		}).fail(function () {
 			alert('Request failed.');
 			$btn.prop('disabled', false).text('Remove');
-		});
-	});
-
-	// Toggle seat assignment
-	$members.on('click', '.myies-orgmgmt__seat-toggle', function () {
-		var $btn       = $(this);
-		var personUuid = $btn.data('person');
-		var seatAction = $btn.data('seat-action'); // 'assign' or 'remove'
-		var origText   = $btn.text();
-
-		$btn.prop('disabled', true).text('...');
-
-		$.post(cfg.ajaxUrl, {
-			action:      'myies_orgmgmt_toggle_seat',
-			nonce:       cfg.nonce,
-			person_uuid: personUuid,
-			seat_action: seatAction
-		}, function (res) {
-			if (res.success) {
-				// Refresh seat data and re-render
-				loadMembers();
-			} else {
-				alert(res.data.message || 'Error');
-				$btn.prop('disabled', false).text(origText);
-			}
-		}).fail(function () {
-			alert('Request failed.');
-			$btn.prop('disabled', false).text(origText);
 		});
 	});
 

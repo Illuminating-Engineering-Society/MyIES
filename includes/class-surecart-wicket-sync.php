@@ -369,13 +369,10 @@ class Wicket_Membership_Service {
         $active = [];
         foreach ($res['data'] as $entry) {
             $active[] = [
-                'id'                       => $entry['id'],
-                'tier_uuid'                => $entry['relationships']['membership']['data']['id'] ?? null,
-                'starts_at'                => $entry['attributes']['starts_at'] ?? null,
-                'ends_at'                  => $entry['attributes']['ends_at'] ?? null,
-                'max_assignments'          => $entry['attributes']['max_assignments'] ?? null,
-                'active_assignments_count' => $entry['attributes']['active_assignments_count'] ?? 0,
-                'unlimited_assignments'    => !empty($entry['attributes']['unlimited_assignments']),
+                'id'        => $entry['id'],
+                'tier_uuid' => $entry['relationships']['membership']['data']['id'] ?? null,
+                'starts_at' => $entry['attributes']['starts_at'] ?? null,
+                'ends_at'   => $entry['attributes']['ends_at'] ?? null,
             ];
         }
 
