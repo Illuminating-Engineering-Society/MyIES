@@ -150,24 +150,43 @@ function wicket_create_basic_person($first_name, $last_name, $email, $password) 
 }
 
 /**
+ * Validate email uniqueness before form saves
+ */
+function wicket_validate_registration_email($errors, $data, $form, $fields) {
+    $target_form_ids = array(38);
+
+    if (!in_array($form->id, $target_form_ids)) {
+        return $errors;
+    }
+
+    $email = isset($data['email']) ? sanitize_email($data['email']) : '';
+
+    if (!empty($email) && email_exists($email)) {
+        $errors['email'] = array(__('This email address is already registered. Please log in or use a different email.', 'wicket-integration'));
+    }
+
+    return $errors;
+}
+add_filter('fluentform/validation_errors', 'wicket_validate_registration_email', 10, 4);
+
+/**
  * Fluent Forms submission handler
- * Hook into Fluent Forms after form submission
+ * Creates person in Wicket, then WordPress user, then logs in
  */
 function handle_fluent_forms_wicket_registration($entry_id, $form_data, $form) {
-    // You can specify which form IDs should trigger Wicket registration
-    // Replace 'YOUR_FORM_ID' with the actual form ID, or remove this check to apply to all forms
-    $target_form_ids = array(5); // Replace with your actual form IDs
-    
-    if (!empty($target_form_ids) && !in_array($form->id, $target_form_ids)) {
-        return; // Skip if not the target form
+    $target_form_ids = array(38);
+
+    if (!in_array($form->id, $target_form_ids)) {
+        return;
     }
-    
+
     // Extract form data
     $first_name = '';
     $last_name = '';
     $email = '';
     $password = '';
-    
+    $company = '';
+
     foreach ($form_data as $field_name => $field_value) {
         switch ($field_name) {
             case 'names':
@@ -182,38 +201,92 @@ function handle_fluent_forms_wicket_registration($entry_id, $form_data, $form) {
             case 'password':
                 $password = $field_value;
                 break;
+            case 'company':
+                $company = sanitize_text_field($field_value);
+                break;
         }
     }
-    
+
     // Validate required fields
     if (empty($first_name) || empty($last_name) || empty($email) || empty($password)) {
         error_log('Wicket Registration: Missing required fields');
         return;
     }
-    
-    // Create person in Wicket
-    $result = wicket_create_basic_person($first_name, $last_name, $email, $password);
-    
-    // Log the result
-    if ($result['success']) {
-        error_log("Wicket Registration Success: Person created with ID " . ($result['person_id'] ?? 'unknown'));
-        
-        // Optionally store the Wicket person ID in the form entry meta
-        if ($entry_id && !empty($result['person_id'])) {
-            // Store Wicket person ID for future reference
-            update_post_meta($entry_id, '_wicket_person_id', $result['person_id']);
-        }
-        
-        // You can add custom actions here for successful registration
-        do_action('wicket_person_registration_success', $result, $form_data, $form);
-        
-    } else {
-        error_log("Wicket Registration Failed: " . $result['message']);
-        
-        // You can add custom actions here for failed registration
-        do_action('wicket_person_registration_failed', $result, $form_data, $form);
+
+    // Safety check
+    if (email_exists($email)) {
+        error_log('Wicket Registration: Email already exists in WordPress — ' . $email);
+        return;
     }
+
+    // Step 1: Create person in Wicket
+    $result = wicket_create_basic_person($first_name, $last_name, $email, $password);
+
+    if ($result['success']) {
+        error_log("Wicket Registration: Person created in Wicket — UUID: " . ($result['person_id'] ?? 'unknown'));
+    } else {
+        error_log("Wicket Registration: Wicket creation failed — " . $result['message']);
+        // On 409 (email exists in Wicket) we still create the WP user
+        if (($result['status_code'] ?? 0) !== 409) {
+            return;
+        }
+    }
+
+    // Step 2: Create WordPress user
+    $user_id = wp_insert_user(array(
+        'user_login'   => $email,
+        'user_email'   => $email,
+        'user_pass'    => $password,
+        'first_name'   => sanitize_text_field($first_name),
+        'last_name'    => sanitize_text_field($last_name),
+        'display_name' => trim(sanitize_text_field($first_name) . ' ' . sanitize_text_field($last_name)),
+        'role'         => 'subscriber',
+    ));
+
+    if (is_wp_error($user_id)) {
+        error_log('Wicket Registration: WP user creation failed — ' . $user_id->get_error_message());
+        return;
+    }
+
+    error_log('Wicket Registration: WP user created — ID: ' . $user_id);
+
+    // Link Wicket UUID
+    if (!empty($result['person_id'])) {
+        update_user_meta($user_id, 'wicket_person_uuid', $result['person_id']);
+    }
+
+    // Step 3: Create company in Wicket and connect to person
+    if (!empty($company) && !empty($result['person_id'])) {
+        $person_uuid = $result['person_id'];
+
+        // Create the organization in Wicket (type: company)
+        $new_org = wicket_myies_create_organization($company, 'company');
+
+        if ($new_org && isset($new_org['id'])) {
+            error_log('Wicket Registration: Company created — UUID: ' . $new_org['id']);
+
+            // Connect person to organization
+            $conn_result = wicket_create_person_org_connection($person_uuid, $new_org['id']);
+            if (!is_wp_error($conn_result)) {
+                error_log('Wicket Registration: Person connected to company');
+                update_user_meta($user_id, 'wicket_org_uuid', $new_org['id']);
+                update_user_meta($user_id, 'wicket_org_name', $company);
+            } else {
+                error_log('Wicket Registration: Failed to connect person to company — ' . $conn_result->get_error_message());
+            }
+        } else {
+            error_log('Wicket Registration: Failed to create company in Wicket — ' . $company);
+        }
+    }
+
+    // Step 4: Log the user in
+    wp_set_current_user($user_id);
+    wp_set_auth_cookie($user_id, true);
+
+    error_log('Wicket Registration: User logged in — ID: ' . $user_id);
+
+    do_action('wicket_person_registration_success', $result, $form_data, $form);
 }
 
-// Hook into Fluent Forms after form submission
+// Hook into Fluent Forms
 add_action('fluentform/submission_inserted', 'handle_fluent_forms_wicket_registration', 10, 3);
