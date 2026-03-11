@@ -305,7 +305,7 @@
 				html += '<td>';
 				if (!m.is_self) {
 					html += '<button type="button" class="myies-orgmgmt__btn myies-orgmgmt__btn--danger myies-orgmgmt__remove-btn" ' +
-						'data-connection="' + escAttr(m.connection_uuid) + '" data-person="' + escAttr(m.person_uuid) + '">Remove</button>';
+						'data-connection="' + escAttr(m.connection_uuid) + '">Remove</button>';
 				}
 				html += '</td>';
 			}
@@ -347,16 +347,14 @@
 	$members.on('click', '.myies-orgmgmt__remove-btn', function () {
 		if (!confirm(cfg.i18n.confirm_remove)) return;
 
-		var $btn       = $(this);
-		var connUuid   = $btn.data('connection');
-		var personUuid = $btn.data('person');
+		var $btn     = $(this);
+		var connUuid = $btn.data('connection');
 		$btn.prop('disabled', true).text(cfg.i18n.removing);
 
 		$.post(cfg.ajaxUrl, {
 			action:          'myies_orgmgmt_remove_member',
 			nonce:           cfg.nonce,
-			connection_uuid: connUuid,
-			person_uuid:     personUuid
+			connection_uuid: connUuid
 		}, function (res) {
 			if (res.success) {
 				allMembers = allMembers.filter(function (m) {

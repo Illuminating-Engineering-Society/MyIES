@@ -455,90 +455,6 @@ class MyIES_Org_Management {
 	}
 
 	// =========================================================================
-	// Seat management helpers
-	// =========================================================================
-
-	/**
-	 * Assign a person to the org's active sustaining membership seat (if available).
-	 */
-	private function assign_membership_seat( $person_uuid, $org_uuid, $starts_at = null, $ends_at = null ) {
-		try {
-			$svc = new Wicket_Membership_Service();
-		} catch ( Exception $e ) {
-			error_log( '[OrgMgmt] Could not init membership service for seat assignment: ' . $e->getMessage() );
-			return;
-		}
-
-		$active_memberships = $svc->find_all_active_org_memberships( $org_uuid );
-		if ( empty( $active_memberships ) ) {
-			error_log( '[OrgMgmt] No active org membership found for org ' . $org_uuid . ' — skipping seat assignment' );
-			return;
-		}
-
-		// Use the first active org membership
-		$org_membership = $active_memberships[0];
-		$org_membership_uuid = $org_membership['id'];
-
-		// Check if this person is already assigned
-		$existing = $svc->get_org_membership_assignments( $org_membership_uuid );
-		foreach ( $existing as $assignment ) {
-			if ( $assignment['person_uuid'] === $person_uuid ) {
-				error_log( '[OrgMgmt] Person ' . $person_uuid . ' already has a seat on org membership ' . $org_membership_uuid );
-				return;
-			}
-		}
-
-		$result = $svc->assign_person_to_org_membership(
-			$person_uuid,
-			$org_membership_uuid,
-			$starts_at ?: $org_membership['starts_at'],
-			$ends_at ?: $org_membership['ends_at']
-		);
-
-		if ( is_wp_error( $result ) ) {
-			error_log( '[OrgMgmt] Failed to assign seat to person ' . $person_uuid . ': ' . $result->get_error_message() );
-		} else {
-			error_log( '[OrgMgmt] Assigned person ' . $person_uuid . ' to org membership seat ' . $org_membership_uuid );
-		}
-	}
-
-	/**
-	 * Remove a person's seat from the org's active sustaining membership.
-	 */
-	private function remove_membership_seat( $person_uuid, $org_uuid ) {
-		try {
-			$svc = new Wicket_Membership_Service();
-		} catch ( Exception $e ) {
-			error_log( '[OrgMgmt] Could not init membership service for seat removal: ' . $e->getMessage() );
-			return;
-		}
-
-		$active_memberships = $svc->find_all_active_org_memberships( $org_uuid );
-		if ( empty( $active_memberships ) ) {
-			return;
-		}
-
-		$org_membership_uuid = $active_memberships[0]['id'];
-		$assignments = $svc->get_org_membership_assignments( $org_membership_uuid );
-
-		foreach ( $assignments as $assignment ) {
-			if ( $assignment['person_uuid'] === $person_uuid ) {
-				$now = current_time( 'c' );
-				$deactivate = $svc->update_membership( $assignment['id'], null, $now );
-
-				if ( is_wp_error( $deactivate ) ) {
-					error_log( '[OrgMgmt] Failed to remove seat for person ' . $person_uuid . ': ' . $deactivate->get_error_message() );
-				} else {
-					error_log( '[OrgMgmt] Removed seat for person ' . $person_uuid . ' from org membership ' . $org_membership_uuid );
-				}
-				return;
-			}
-		}
-
-		error_log( '[OrgMgmt] Person ' . $person_uuid . ' had no seat on org membership ' . $org_membership_uuid );
-	}
-
-	// =========================================================================
 	// AJAX: Add member to organization
 	// =========================================================================
 
@@ -579,9 +495,6 @@ class MyIES_Org_Management {
 		$result = $api->create_person_org_connection( $person_uuid, $auth['org_uuid'], $role );
 
 		if ( $result['success'] ) {
-			// Assign a seat on the org's sustaining membership
-			$this->assign_membership_seat( $person_uuid, $auth['org_uuid'] );
-
 			wp_send_json_success( array(
 				'message' => $result['already_existed']
 					? __( 'This person is already connected to the organization.', 'wicket-integration' )
@@ -604,7 +517,6 @@ class MyIES_Org_Management {
 		}
 
 		$connection_uuid = isset( $_POST['connection_uuid'] ) ? sanitize_text_field( $_POST['connection_uuid'] ) : '';
-		$person_uuid     = isset( $_POST['person_uuid'] ) ? sanitize_text_field( $_POST['person_uuid'] ) : '';
 		if ( empty( $connection_uuid ) ) {
 			wp_send_json_error( array( 'message' => __( 'Connection UUID required.', 'wicket-integration' ) ) );
 		}
@@ -615,11 +527,6 @@ class MyIES_Org_Management {
 		) );
 
 		if ( $result['success'] ) {
-			// Remove the person's seat from the org's sustaining membership
-			if ( ! empty( $person_uuid ) ) {
-				$this->remove_membership_seat( $person_uuid, $auth['org_uuid'] );
-			}
-
 			wp_send_json_success( array( 'message' => __( 'Member removed from organization.', 'wicket-integration' ) ) );
 		} else {
 			wp_send_json_error( array( 'message' => $result['message'] ?? __( 'Failed to remove member.', 'wicket-integration' ) ) );
@@ -687,9 +594,6 @@ class MyIES_Org_Management {
 		$result = $api->create_person_org_connection( $person_uuid, $auth['org_uuid'], $role );
 
 		if ( $result['success'] ) {
-			// Assign a seat on the org's sustaining membership
-			$this->assign_membership_seat( $person_uuid, $auth['org_uuid'] );
-
 			wp_send_json_success( array(
 				'message' => sprintf(
 					__( '%s has been created and added to the organization.', 'wicket-integration' ),
