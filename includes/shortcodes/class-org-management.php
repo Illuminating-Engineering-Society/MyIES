@@ -41,6 +41,8 @@ class MyIES_Org_Management {
 		add_action( 'wp_ajax_myies_orgmgmt_add_member', array( $this, 'ajax_add_member' ) );
 		add_action( 'wp_ajax_myies_orgmgmt_remove_member', array( $this, 'ajax_remove_member' ) );
 		add_action( 'wp_ajax_myies_orgmgmt_create_and_add', array( $this, 'ajax_create_and_add_member' ) );
+		add_action( 'wp_ajax_myies_orgmgmt_get_seats', array( $this, 'ajax_get_seats' ) );
+		add_action( 'wp_ajax_myies_orgmgmt_toggle_seat', array( $this, 'ajax_toggle_seat' ) );
 
 		// Register assets
 		add_action( 'wp_enqueue_scripts', array( $this, 'register_assets' ) );
@@ -335,6 +337,7 @@ class MyIES_Org_Management {
 			<!-- Members list -->
 			<div class="myies-orgmgmt__list">
 				<h4><?php esc_html_e( 'Current Members', 'wicket-integration' ); ?></h4>
+				<div id="myies-orgmgmt-seat-summary" class="myies-orgmgmt__seat-summary" style="display:none;"></div>
 				<div id="myies-orgmgmt-search-members-wrap" class="myies-orgmgmt__filter">
 					<input type="text" id="myies-orgmgmt-filter" autocomplete="off"
 					       placeholder="<?php esc_attr_e( 'Filter members...', 'wicket-integration' ); ?>">
@@ -536,6 +539,80 @@ class MyIES_Org_Management {
 		}
 
 		error_log( '[OrgMgmt] Person ' . $person_uuid . ' had no seat on org membership ' . $org_membership_uuid );
+	}
+
+	// =========================================================================
+	// AJAX: Get seat information for the org's active membership
+	// =========================================================================
+
+	public function ajax_get_seats() {
+		check_ajax_referer( 'myies_orgmgmt_nonce', 'nonce' );
+		$auth = $this->check_authorization();
+		if ( ! $auth['authorized'] ) {
+			wp_send_json_error( array( 'message' => 'Unauthorized' ) );
+		}
+
+		try {
+			$svc = new Wicket_Membership_Service();
+		} catch ( Exception $e ) {
+			wp_send_json_error( array( 'message' => 'Could not initialize membership service.' ) );
+		}
+
+		$active_memberships = $svc->find_all_active_org_memberships( $auth['org_uuid'] );
+		if ( empty( $active_memberships ) ) {
+			wp_send_json_success( array(
+				'has_membership' => false,
+				'seats'          => array(),
+			) );
+			return;
+		}
+
+		$org_membership = $active_memberships[0];
+		$assignments    = $svc->get_org_membership_assignments( $org_membership['id'] );
+
+		// Build a map of person_uuid => assignment info
+		$seated = array();
+		foreach ( $assignments as $a ) {
+			if ( ! empty( $a['person_uuid'] ) ) {
+				$seated[ $a['person_uuid'] ] = $a['id'];
+			}
+		}
+
+		wp_send_json_success( array(
+			'has_membership'         => true,
+			'org_membership_uuid'    => $org_membership['id'],
+			'max_assignments'        => $org_membership['max_assignments'],
+			'active_assignments'     => $org_membership['active_assignments_count'],
+			'unlimited_assignments'  => $org_membership['unlimited_assignments'],
+			'seated_persons'         => $seated, // person_uuid => person_membership_uuid
+		) );
+	}
+
+	// =========================================================================
+	// AJAX: Toggle a seat for a person (assign or remove)
+	// =========================================================================
+
+	public function ajax_toggle_seat() {
+		check_ajax_referer( 'myies_orgmgmt_nonce', 'nonce' );
+		$auth = $this->check_authorization();
+		if ( ! $auth['authorized'] || ! $auth['can_manage'] ) {
+			wp_send_json_error( array( 'message' => 'Unauthorized — Management role required.' ) );
+		}
+
+		$person_uuid = isset( $_POST['person_uuid'] ) ? sanitize_text_field( $_POST['person_uuid'] ) : '';
+		$action_type = isset( $_POST['seat_action'] ) ? sanitize_text_field( $_POST['seat_action'] ) : '';
+
+		if ( empty( $person_uuid ) || ! in_array( $action_type, array( 'assign', 'remove' ), true ) ) {
+			wp_send_json_error( array( 'message' => __( 'Invalid request.', 'wicket-integration' ) ) );
+		}
+
+		if ( $action_type === 'assign' ) {
+			$this->assign_membership_seat( $person_uuid, $auth['org_uuid'] );
+			wp_send_json_success( array( 'message' => __( 'Seat assigned.', 'wicket-integration' ) ) );
+		} else {
+			$this->remove_membership_seat( $person_uuid, $auth['org_uuid'] );
+			wp_send_json_success( array( 'message' => __( 'Seat removed.', 'wicket-integration' ) ) );
+		}
 	}
 
 	// =========================================================================
