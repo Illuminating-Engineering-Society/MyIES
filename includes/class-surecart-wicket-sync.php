@@ -353,6 +353,33 @@ class Wicket_Membership_Service {
     }
 
     /**
+     * Find ALL active organization memberships for an org (any tier).
+     *
+     * Used during upgrades to deactivate the old tier before creating the new one.
+     *
+     * @return array  List of ['id' => ..., 'tier_uuid' => ..., 'starts_at' => ..., 'ends_at' => ...]
+     */
+    public function find_all_active_org_memberships(string $org_uuid): array {
+        $res = $this->request("/organizations/{$org_uuid}/membership_entries?include=membership&page[size]=100&filter[active_at]=now");
+
+        if (is_wp_error($res) || empty($res['data'])) {
+            return [];
+        }
+
+        $active = [];
+        foreach ($res['data'] as $entry) {
+            $active[] = [
+                'id'        => $entry['id'],
+                'tier_uuid' => $entry['relationships']['membership']['data']['id'] ?? null,
+                'starts_at' => $entry['attributes']['starts_at'] ?? null,
+                'ends_at'   => $entry['attributes']['ends_at'] ?? null,
+            ];
+        }
+
+        return $active;
+    }
+
+    /**
      * Create a membership entry in Wicket
      */
     public function create_membership(
@@ -1239,6 +1266,24 @@ class SureCart_Wicket_Sync {
             error_log('[SURECART-WICKET] Extending existing org membership ' . $existing_uuid . ': existing_ends_at=' . ($existing_ends_at ?: 'null') . ', new_ends_at=' . $new_ends_at);
             $res = $svc->update_organization_membership($existing_uuid, null, $new_ends_at);
         } else {
+            // Deactivate any other active org memberships for this org (upgrade scenario)
+            $active_memberships = $svc->find_all_active_org_memberships($org_uuid);
+            $now = current_time('c');
+
+            foreach ($active_memberships as $active_entry) {
+                // Skip if it's somehow the same tier we're about to create
+                if ($active_entry['tier_uuid'] === $wicket_membership_uuid) {
+                    continue;
+                }
+
+                error_log('[SURECART-WICKET] Deactivating old org membership ' . $active_entry['id'] . ' (tier: ' . $active_entry['tier_uuid'] . ') for upgrade');
+                $deactivate_res = $svc->update_organization_membership($active_entry['id'], null, $now);
+
+                if (is_wp_error($deactivate_res)) {
+                    error_log('[SURECART-WICKET] Failed to deactivate old org membership: ' . $deactivate_res->get_error_message());
+                }
+            }
+
             error_log('[SURECART-WICKET] Creating new org membership for tier: ' . $wicket_membership_uuid);
             $res = $svc->create_organization_membership(
                 $org_uuid,
