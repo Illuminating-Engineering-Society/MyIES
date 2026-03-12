@@ -18,6 +18,8 @@
 	var $search        = $('#myies-seats-search');
 	var $results       = $('#myies-seats-search-results');
 	var $assignMsg     = $('#myies-seats-assign-message');
+	var $filterWrap    = $('#myies-seats-filter-wrap');
+	var $filter        = $('#myies-seats-filter');
 
 	var seatInfo       = null; // { max_assignments, unlimited_assignments, total_seated, seated[] }
 	var searchTimer    = null;
@@ -52,6 +54,7 @@
 
 			renderSummary();
 			renderSeatedMembers();
+			$filter.val('');
 		}).fail(function () {
 			$summary.html('<p class="myies-seats__error">Request failed.</p>');
 		});
@@ -92,8 +95,11 @@
 	function renderSeatedMembers() {
 		if (!seatInfo.seated.length) {
 			$members.html('<p class="myies-seats__empty">No seats assigned yet.</p>');
+			$filterWrap.hide();
 			return;
 		}
+
+		$filterWrap.show();
 
 		var html = '<table class="myies-seats__table">' +
 			'<thead><tr>' +
@@ -130,6 +136,18 @@
 		$search.val('');
 		$results.empty().hide();
 		$assignMsg.hide();
+	});
+
+	// =========================================================================
+	// Filter seated members (client-side)
+	// =========================================================================
+	$filter.on('input', function () {
+		var val = $.trim(this.value).toLowerCase();
+		$members.find('.myies-seats__table tbody tr').each(function () {
+			var $row = $(this);
+			var text = $row.text().toLowerCase();
+			$row.toggle(val === '' || text.indexOf(val) !== -1);
+		});
 	});
 
 	// =========================================================================

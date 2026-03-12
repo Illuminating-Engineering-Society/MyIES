@@ -233,6 +233,12 @@ class MyIES_Seat_Management {
 				<div id="myies-seats-assign-message" class="myies-seats__message" style="display:none;"></div>
 			</div>
 
+			<!-- Filter seated members -->
+			<div id="myies-seats-filter-wrap" class="myies-seats__filter-wrap" style="display:none;">
+				<input type="text" id="myies-seats-filter" autocomplete="off"
+				       placeholder="<?php esc_attr_e( 'Filter seated members by name or email...', 'wicket-integration' ); ?>">
+			</div>
+
 			<!-- Seated people list -->
 			<div class="myies-seats__list">
 				<div id="myies-seats-members" class="myies-seats__members">

@@ -194,6 +194,21 @@
 	font-size: 0.95em;
 }
 
+/* ---------- Filter bar ---------- */
+
+.myies-seats__filter-wrap {
+	margin-bottom: 16px;
+}
+
+.myies-seats__filter-wrap input[type="text"] {
+	width: 100%;
+	padding: 10px 12px;
+	font-size: 14px;
+	border: 1px solid #ccc;
+	border-radius: 4px;
+	box-sizing: border-box;
+}
+
 /* ---------- Seated members table ---------- */
 
 .myies-seats__table {
