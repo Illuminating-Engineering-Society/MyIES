@@ -114,16 +114,6 @@ class MyIES_Seat_Management {
 			$result['can_manage'] = true;
 		}
 
-		// Check active org membership
-		if ( class_exists( 'Wicket_Memberships' ) ) {
-			$memberships = Wicket_Memberships::get_instance();
-			$active_org  = $memberships->get_active_org_membership( $user_id );
-			if ( empty( $active_org ) ) {
-				$result['reason'] = 'no_active_membership';
-				return $result;
-			}
-		}
-
 		$result['authorized'] = true;
 		return $result;
 	}
@@ -270,16 +260,22 @@ class MyIES_Seat_Management {
 			wp_send_json_error( array( 'message' => 'Could not initialize membership service.' ) );
 		}
 
+		// 1. Try org-level membership entries
 		$active_memberships = $svc->find_all_active_org_memberships( $auth['org_uuid'] );
-		if ( empty( $active_memberships ) ) {
+		$org_membership     = ! empty( $active_memberships ) ? $active_memberships[0] : null;
+
+		// 2. Fallback: check person's membership entries for an org membership linked to this org
+		if ( ! $org_membership ) {
+			$org_membership = $svc->find_org_membership_via_person( $auth['person_uuid'], $auth['org_uuid'] );
+		}
+
+		if ( ! $org_membership ) {
 			wp_send_json_success( array(
 				'has_membership' => false,
 				'seated'         => array(),
 			) );
 			return;
 		}
-
-		$org_membership          = $active_memberships[0];
 		$org_membership_uuid     = $org_membership['id'];
 		$max_assignments         = $org_membership['max_assignments'] ?? null;
 		$unlimited_assignments   = ! empty( $org_membership['unlimited_assignments'] );
@@ -349,14 +345,19 @@ class MyIES_Seat_Management {
 		$api     = wicket_api();
 		$members = $api->get_organization_members( $auth['org_uuid'] );
 
-		// Get current seat holders to mark them
+		// Get current seat holders to exclude from results
 		try {
 			$svc                 = new Wicket_Membership_Service();
 			$active_memberships  = $svc->find_all_active_org_memberships( $auth['org_uuid'] );
-			$seated_person_uuids = array();
+			$org_membership      = ! empty( $active_memberships ) ? $active_memberships[0] : null;
 
-			if ( ! empty( $active_memberships ) ) {
-				$assignments = $svc->get_org_membership_assignments( $active_memberships[0]['id'] );
+			if ( ! $org_membership ) {
+				$org_membership = $svc->find_org_membership_via_person( $auth['person_uuid'], $auth['org_uuid'] );
+			}
+
+			$seated_person_uuids = array();
+			if ( $org_membership ) {
+				$assignments = $svc->get_org_membership_assignments( $org_membership['id'] );
 				foreach ( $assignments as $a ) {
 					if ( ! empty( $a['person_uuid'] ) ) {
 						$seated_person_uuids[ $a['person_uuid'] ] = true;
@@ -432,11 +433,15 @@ class MyIES_Seat_Management {
 		}
 
 		$active_memberships = $svc->find_all_active_org_memberships( $auth['org_uuid'] );
-		if ( empty( $active_memberships ) ) {
-			wp_send_json_error( array( 'message' => __( 'No active organization membership found.', 'wicket-integration' ) ) );
+		$org_membership     = ! empty( $active_memberships ) ? $active_memberships[0] : null;
+
+		if ( ! $org_membership ) {
+			$org_membership = $svc->find_org_membership_via_person( $auth['person_uuid'], $auth['org_uuid'] );
 		}
 
-		$org_membership = $active_memberships[0];
+		if ( ! $org_membership ) {
+			wp_send_json_error( array( 'message' => __( 'No active organization membership found.', 'wicket-integration' ) ) );
+		}
 
 		// Check if already assigned
 		$assignments = $svc->get_org_membership_assignments( $org_membership['id'] );

@@ -383,6 +383,65 @@ class Wicket_Membership_Service {
     }
 
     /**
+     * Find an active organization membership via a person's membership entries.
+     *
+     * When the sustaining membership is attached to the person rather than the org,
+     * the person_membership will have an organization_membership relationship.
+     *
+     * @return array|null  Same shape as find_all_active_org_memberships entries, or null if not found.
+     */
+    public function find_org_membership_via_person(string $person_uuid, string $org_uuid): ?array {
+        $res = $this->request("/people/{$person_uuid}/membership_entries?include=membership,organization_membership&filter[active_at]=now&page[size]=100");
+
+        if (is_wp_error($res) || empty($res['data'])) {
+            return null;
+        }
+
+        // Build included lookup
+        $included = [];
+        foreach (($res['included'] ?? []) as $inc) {
+            $included[$inc['type'] . ':' . $inc['id']] = $inc;
+        }
+
+        foreach ($res['data'] as $entry) {
+            $org_mem_rel = $entry['relationships']['organization_membership']['data'] ?? null;
+            if (empty($org_mem_rel)) {
+                continue;
+            }
+
+            $org_mem_key = 'organization_memberships:' . $org_mem_rel['id'];
+            $org_mem     = $included[$org_mem_key] ?? null;
+            if (!$org_mem) {
+                continue;
+            }
+
+            // Verify this org membership belongs to the target organization
+            $org_rel_id = $org_mem['relationships']['organization']['data']['id'] ?? null;
+            if ($org_rel_id !== $org_uuid) {
+                continue;
+            }
+
+            // Check it's still active
+            $ends_at = $org_mem['attributes']['ends_at'] ?? null;
+            if ($ends_at && strtotime($ends_at) < time()) {
+                continue;
+            }
+
+            return [
+                'id'                       => $org_mem['id'],
+                'tier_uuid'                => $org_mem['relationships']['membership']['data']['id'] ?? null,
+                'starts_at'                => $org_mem['attributes']['starts_at'] ?? null,
+                'ends_at'                  => $ends_at,
+                'max_assignments'          => $org_mem['attributes']['max_assignments'] ?? null,
+                'active_assignments_count' => $org_mem['attributes']['active_assignments_count'] ?? 0,
+                'unlimited_assignments'    => !empty($org_mem['attributes']['unlimited_assignments']),
+            ];
+        }
+
+        return null;
+    }
+
+    /**
      * Get the person_memberships assigned to an organization membership (seats).
      *
      * @return array  List of ['id' => person_membership_uuid, 'person_uuid' => ..., 'starts_at' => ..., 'ends_at' => ...]
