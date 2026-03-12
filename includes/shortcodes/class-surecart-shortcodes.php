@@ -73,6 +73,9 @@ class MyIES_SureCart_Shortcodes {
 
 		// Change SureCart cancel button text.
 		add_action( 'wp_enqueue_scripts', array( $this, 'change_surecart_cancel_text' ), 999 );
+
+		// Enqueue orders history styles.
+		add_action( 'wp_enqueue_scripts', array( $this, 'enqueue_orders_styles' ) );
 	}
 
 	/**
@@ -197,28 +200,12 @@ class MyIES_SureCart_Shortcodes {
 					$status_class = 'status-' . sanitize_html_class( $order->status );
 					?>
 
-					<div class="brxe-block order-hist-grid" data-order-id="<?php echo esc_attr( $order->id ?? '' ); ?>">
+					<div class="brxe-block order-hist-grid-row" data-order-id="<?php echo esc_attr( $order->id ?? '' ); ?>">
 
 						<!-- Order Date -->
 						<div class="brxe-block ord-hist-cont">
 							<div class="brxe-text-basic ord-hist-text">
 								<?php echo esc_html( $date ); ?>
-							</div>
-						</div>
-
-						<!-- Clickable Order Reference -->
-						<div class="brxe-block ord-hist-cont">
-							<div class="brxe-text-basic ord-hist-text">
-								<?php if ( ! empty( $pdf_url ) ) : ?>
-									<a href="<?php echo esc_url( $pdf_url ); ?>"
-									   target="_blank"
-									   class="ord-hist-ref-link"
-									   title="<?php esc_attr_e( 'View Invoice', 'wicket-integration' ); ?>">
-										<?php echo esc_html( $order_number ); ?>
-									</a>
-								<?php else : ?>
-									<?php echo esc_html( $order_number ); ?>
-								<?php endif; ?>
 							</div>
 						</div>
 
@@ -241,6 +228,22 @@ class MyIES_SureCart_Shortcodes {
 						<div class="brxe-block ord-hist-cont">
 							<div class="brxe-text-basic ord-hist-text">
 								$<?php echo esc_html( $formatted_amount ); ?>
+							</div>
+						</div>
+
+						<!-- Clickable Order Reference -->
+						<div class="brxe-block ord-hist-cont">
+							<div class="brxe-text-basic ord-hist-text">
+								<?php if ( ! empty( $pdf_url ) ) : ?>
+									<a href="<?php echo esc_url( $pdf_url ); ?>"
+									   target="_blank"
+									   class="ord-hist-ref-link"
+									   title="<?php esc_attr_e( 'View Invoice', 'wicket-integration' ); ?>">
+										<?php echo esc_html( $order_number ); ?>
+									</a>
+								<?php else : ?>
+									<?php echo esc_html( $order_number ); ?>
+								<?php endif; ?>
 							</div>
 						</div>
 
@@ -807,6 +810,23 @@ class MyIES_SureCart_Shortcodes {
 		if ( class_exists( '\SureCart' ) && method_exists( \SureCart::class, 'assets' ) ) {
 			\SureCart::assets()->enqueueComponents();
 		}
+	}
+
+	/**
+	 * Enqueue orders history stylesheet.
+	 *
+	 * Loads the CSS for the order history grid layout and status badges.
+	 *
+	 * @since 1.0.20
+	 * @return void
+	 */
+	public function enqueue_orders_styles() {
+		wp_enqueue_style(
+			'myies-surecart-orders',
+			WICKET_INTEGRATION_PLUGIN_URL . 'assets/css/surecart-orders.css',
+			array(),
+			WICKET_INTEGRATION_VERSION
+		);
 	}
 
 	/**

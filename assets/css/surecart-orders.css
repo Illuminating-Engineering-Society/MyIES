@@ -1,0 +1,131 @@
+/**
+ * SureCart Orders History - Styles
+ *
+ * Layout and status badge styles for the [surecart_orders_history] shortcode.
+ *
+ * @package MyIES_Integration
+ * @since 1.0.20
+ */
+
+/* ============================================= */
+/* ORDER HISTORY GRID - ROW LAYOUT               */
+/* ============================================= */
+
+/**
+ * Each order row: display items side by side (flex row).
+ * .order-hist-grid wraps all columns for a single order.
+ */
+.order-hist-grid-row {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.order-hist-grid-row:last-child {
+    border-bottom: none;
+}
+
+/**
+ * Each column inside the order row.
+ * flex: 1 makes them share space equally; min-width prevents overflow.
+ */
+.ord-hist-cont {
+    flex: 1;
+    min-width: 0;
+}
+
+/**
+ * Text inside each column.
+ */
+.ord-hist-text {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/**
+ * Invoice link style.
+ */
+.ord-hist-ref-link {
+    text-decoration: underline;
+    color: inherit;
+}
+
+.ord-hist-ref-link:hover {
+    opacity: 0.75;
+}
+
+/* ============================================= */
+/* ORDER STATUS BADGES                           */
+/* ============================================= */
+
+/**
+ * Base style for the status element (.dash-subs-status).
+ * Displayed as an inline badge with a colored dot.
+ */
+.dash-subs-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+}
+
+/* Paid - Green */
+.status-paid {
+    color: #065f46;
+    background-color: #d1fae5;
+}
+
+/* Completed - Green (same as paid) */
+.status-completed {
+    color: #065f46;
+    background-color: #d1fae5;
+}
+
+/* Processing - Yellow/Amber */
+.status-processing {
+    color: #92400e;
+    background-color: #fef3c7;
+}
+
+/* Canceled - Red */
+.status-canceled {
+    color: #991b1b;
+    background-color: #fee2e2;
+}
+
+/* Refunded - Gray */
+.status-refunded {
+    color: #374151;
+    background-color: #f3f4f6;
+}
+
+/* Unknown / fallback */
+.status-unknown {
+    color: #6b7280;
+    background-color: #f9fafb;
+}
+
+/* ============================================= */
+/* RESPONSIVE                                    */
+/* ============================================= */
+
+@media (max-width: 640px) {
+    .order-hist-grid-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.4rem;
+    }
+
+    .ord-hist-cont {
+        width: 100%;
+    }
+}
