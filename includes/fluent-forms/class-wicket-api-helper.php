@@ -1132,37 +1132,54 @@ class Wicket_API_Helper {
             return array();
         }
 
-        $endpoint = $this->get_api_url() . '/organizations/' . $org_uuid
-                  . '/connections?filter[connection_type_eq]=person_to_organization&include=from&page[size]=200';
+        $connections = array();
+        $people      = array();
+        $page        = 1;
+        $page_size   = 200;
 
-        $response = wp_remote_get($endpoint, array(
-            'headers' => array(
-                'Authorization' => 'Bearer ' . $token,
-                'Content-Type'  => 'application/json',
-                'Accept'        => 'application/json',
-            ),
-            'timeout' => 30,
-        ));
+        do {
+            $endpoint = $this->get_api_url() . '/organizations/' . $org_uuid
+                      . '/connections?filter[connection_type_eq]=person_to_organization&include=from'
+                      . '&page[number]=' . $page . '&page[size]=' . $page_size;
 
-        if (is_wp_error($response)) {
-            error_log('[Wicket API Helper] Failed to get org members: ' . $response->get_error_message());
-            return array();
-        }
+            $response = wp_remote_get($endpoint, array(
+                'headers' => array(
+                    'Authorization' => 'Bearer ' . $token,
+                    'Content-Type'  => 'application/json',
+                    'Accept'        => 'application/json',
+                ),
+                'timeout' => 30,
+            ));
 
-        $body = json_decode(wp_remote_retrieve_body($response), true);
+            if (is_wp_error($response)) {
+                error_log('[Wicket API Helper] Failed to get org members (page ' . $page . '): ' . $response->get_error_message());
+                break;
+            }
 
-        // Build a lookup of included person data
-        $people = array();
-        if (!empty($body['included'])) {
-            foreach ($body['included'] as $inc) {
-                if (($inc['type'] ?? '') === 'people') {
-                    $people[$inc['id']] = $inc;
+            $body = json_decode(wp_remote_retrieve_body($response), true);
+
+            if (empty($body['data'])) {
+                break;
+            }
+
+            // Collect included person data
+            if (!empty($body['included'])) {
+                foreach ($body['included'] as $inc) {
+                    if (($inc['type'] ?? '') === 'people') {
+                        $people[$inc['id']] = $inc;
+                    }
                 }
             }
-        }
+
+            foreach ($body['data'] as $conn) {
+                $connections[] = $conn;
+            }
+
+            $count = count($body['data']);
+            $page++;
+        } while ($count >= $page_size);
 
         // Merge person data into each connection
-        $connections = $body['data'] ?? array();
         foreach ($connections as &$conn) {
             $person_uuid = $conn['relationships']['from']['data']['id'] ?? null;
             if ($person_uuid && isset($people[$person_uuid])) {

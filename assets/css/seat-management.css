@@ -251,3 +251,41 @@
 	color: #888;
 	font-style: italic;
 }
+
+/* ---------- Pagination ---------- */
+
+.myies-seats__pagination {
+	display: flex;
+	justify-content: center;
+	align-items: center;
+	gap: 16px;
+	padding: 16px 0 4px;
+}
+
+.myies-seats__page-btn {
+	display: inline-block;
+	padding: 6px 14px;
+	font-size: 13px;
+	font-weight: 600;
+	color: #0073aa;
+	background: #fff;
+	border: 1px solid #0073aa;
+	border-radius: 4px;
+	cursor: pointer;
+	transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.myies-seats__page-btn:hover:not(:disabled) {
+	background: #0073aa;
+	color: #fff;
+}
+
+.myies-seats__page-btn:disabled {
+	opacity: 0.4;
+	cursor: not-allowed;
+}
+
+.myies-seats__page-info {
+	font-size: 13px;
+	color: #555;
+}

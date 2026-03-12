@@ -22,6 +22,9 @@
 	var $filter        = $('#myies-seats-filter');
 
 	var seatInfo       = null; // { max_assignments, unlimited_assignments, total_seated, seated[] }
+	var allSeated      = [];
+	var currentPage    = 1;
+	var perPage        = 20;
 	var searchTimer    = null;
 
 	// =========================================================================
@@ -45,7 +48,8 @@
 				return;
 			}
 
-			seatInfo = res.data;
+			seatInfo  = res.data;
+			allSeated = seatInfo.seated || [];
 
 			if (!seatInfo.has_membership) {
 				$summary.html('<p>No active organization membership found.</p>');
@@ -53,8 +57,9 @@
 			}
 
 			renderSummary();
-			renderSeatedMembers();
 			$filter.val('');
+			currentPage = 1;
+			renderSeatedMembers(allSeated, 1);
 		}).fail(function () {
 			$summary.html('<p class="myies-seats__error">Request failed.</p>');
 		});
@@ -90,10 +95,19 @@
 	}
 
 	// =========================================================================
-	// Render seated members
+	// Render seated members (paginated)
 	// =========================================================================
-	function renderSeatedMembers() {
-		if (!seatInfo.seated.length) {
+	function getFilteredSeated() {
+		var term = $.trim($filter.val()).toLowerCase();
+		if (!term) return allSeated;
+		return allSeated.filter(function (s) {
+			return (s.name && s.name.toLowerCase().indexOf(term) !== -1) ||
+			       (s.email && s.email.toLowerCase().indexOf(term) !== -1);
+		});
+	}
+
+	function renderSeatedMembers(list, page) {
+		if (!list.length) {
 			$members.html('<p class="myies-seats__empty">No seats assigned yet.</p>');
 			$filterWrap.hide();
 			return;
@@ -101,12 +115,21 @@
 
 		$filterWrap.show();
 
+		page = page || 1;
+		var totalPages = Math.ceil(list.length / perPage);
+		if (page > totalPages) page = totalPages;
+		if (page < 1) page = 1;
+		currentPage = page;
+
+		var start     = (page - 1) * perPage;
+		var pageItems = list.slice(start, start + perPage);
+
 		var html = '<table class="myies-seats__table">' +
 			'<thead><tr>' +
 			'<th>Name</th><th>Email</th><th></th>' +
 			'</tr></thead><tbody>';
 
-		seatInfo.seated.forEach(function (s) {
+		pageItems.forEach(function (s) {
 			html += '<tr>' +
 				'<td>' + escHtml(s.name) + '</td>' +
 				'<td>' + escHtml(s.email) + '</td>' +
@@ -118,8 +141,34 @@
 		});
 
 		html += '</tbody></table>';
+
+		// Pagination controls
+		if (totalPages > 1) {
+			html += '<div class="myies-seats__pagination">';
+			html += '<button type="button" class="myies-seats__page-btn" data-page="' + (page - 1) + '"' +
+				(page <= 1 ? ' disabled' : '') + '>&laquo; Prev</button>';
+			html += '<span class="myies-seats__page-info">Page ' + page + ' of ' + totalPages +
+				' (' + list.length + ' seated)</span>';
+			html += '<button type="button" class="myies-seats__page-btn" data-page="' + (page + 1) + '"' +
+				(page >= totalPages ? ' disabled' : '') + '>Next &raquo;</button>';
+			html += '</div>';
+		}
+
 		$members.html(html);
 	}
+
+	// Pagination click handler
+	$members.on('click', '.myies-seats__page-btn', function () {
+		var page = parseInt($(this).data('page'), 10);
+		if (!page) return;
+		renderSeatedMembers(getFilteredSeated(), page);
+	});
+
+	// Filter seated members — searches across ALL seated, resets to page 1
+	$filter.on('input', function () {
+		currentPage = 1;
+		renderSeatedMembers(getFilteredSeated(), 1);
+	});
 
 	// =========================================================================
 	// Toggle assign section
@@ -136,18 +185,6 @@
 		$search.val('');
 		$results.empty().hide();
 		$assignMsg.hide();
-	});
-
-	// =========================================================================
-	// Filter seated members (client-side)
-	// =========================================================================
-	$filter.on('input', function () {
-		var val = $.trim(this.value).toLowerCase();
-		$members.find('.myies-seats__table tbody tr').each(function () {
-			var $row = $(this);
-			var text = $row.text().toLowerCase();
-			$row.toggle(val === '' || text.indexOf(val) !== -1);
-		});
 	});
 
 	// =========================================================================
@@ -232,7 +269,13 @@
 			person_membership_uuid: pmUuid
 		}, function (res) {
 			if (res.success) {
-				loadSeatData();
+				// Remove locally and re-render without full reload
+				allSeated = allSeated.filter(function (s) {
+					return s.person_membership_uuid !== pmUuid;
+				});
+				seatInfo.total_seated = allSeated.length;
+				renderSummary();
+				renderSeatedMembers(getFilteredSeated(), currentPage);
 			} else {
 				alert(res.data.message || 'Error');
 				$btn.prop('disabled', false).text('Remove Seat');
