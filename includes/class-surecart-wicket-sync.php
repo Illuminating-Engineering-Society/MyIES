@@ -458,16 +458,56 @@ class Wicket_Membership_Service {
      *
      * @return array  List of ['id' => person_membership_uuid, 'person_uuid' => ..., 'starts_at' => ..., 'ends_at' => ...]
      */
+    public function get_org_membership_assignments_paged(string $org_membership_uuid, int $page = 1, int $per_page = 20): array {
+        $res = $this->request("/organization_memberships/{$org_membership_uuid}/person_memberships?page[number]={$page}&page[size]={$per_page}");
+
+        if (is_wp_error($res) || empty($res['data'])) {
+            return ['assignments' => [], 'total_items' => 0, 'total_pages' => 0];
+        }
+
+        $assignments = [];
+        foreach ($res['data'] as $entry) {
+            $ends_at = $entry['attributes']['ends_at'] ?? null;
+
+            if ($ends_at && strtotime($ends_at) < time()) {
+                continue;
+            }
+
+            $assignments[] = [
+                'id'          => $entry['id'],
+                'person_uuid' => $entry['relationships']['person']['data']['id'] ?? null,
+                'starts_at'   => $entry['attributes']['starts_at'] ?? null,
+                'ends_at'     => $ends_at,
+            ];
+        }
+
+        return [
+            'assignments' => $assignments,
+            'total_items' => $res['meta']['total_items'] ?? 0,
+            'total_pages' => $res['meta']['total_pages'] ?? 0,
+        ];
+    }
+
     public function get_org_membership_assignments(string $org_membership_uuid): array {
         $assignments = [];
+        $people      = [];
         $page        = 1;
         $page_size   = 100;
 
         do {
-            $res = $this->request("/organization_memberships/{$org_membership_uuid}/person_memberships?page[number]={$page}&page[size]={$page_size}");
+            $res = $this->request("/organization_memberships/{$org_membership_uuid}/person_memberships?include=person&page[number]={$page}&page[size]={$page_size}");
 
             if (is_wp_error($res) || empty($res['data'])) {
                 break;
+            }
+
+            // Collect included person data
+            if (!empty($res['included'])) {
+                foreach ($res['included'] as $inc) {
+                    if (($inc['type'] ?? '') === 'people') {
+                        $people[$inc['id']] = $inc;
+                    }
+                }
             }
 
             foreach ($res['data'] as $entry) {
@@ -478,11 +518,14 @@ class Wicket_Membership_Service {
                     continue;
                 }
 
+                $person_uuid = $entry['relationships']['person']['data']['id'] ?? null;
+
                 $assignments[] = [
                     'id'          => $entry['id'],
-                    'person_uuid' => $entry['relationships']['person']['data']['id'] ?? null,
+                    'person_uuid' => $person_uuid,
                     'starts_at'   => $entry['attributes']['starts_at'] ?? null,
                     'ends_at'     => $ends_at,
+                    '_person'     => ($person_uuid && isset($people[$person_uuid])) ? $people[$person_uuid] : null,
                 ];
             }
 

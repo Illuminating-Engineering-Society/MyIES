@@ -289,8 +289,7 @@ class MyIES_Seat_Management {
 		// Get current seat assignments
 		$assignments = $svc->get_org_membership_assignments( $org_membership_uuid );
 
-		// Enrich assignments with person name/email from Wicket
-		$api    = wicket_api();
+		// Build seated list using person data embedded by include=person
 		$seated = array();
 		foreach ( $assignments as $a ) {
 			$person_uuid = $a['person_uuid'] ?? '';
@@ -298,17 +297,11 @@ class MyIES_Seat_Management {
 				continue;
 			}
 
-			$name  = $person_uuid;
-			$email = '';
-
-			// Try to get person details from Wicket
-			$person = $api->get_person( $person_uuid );
-			if ( $person && ! is_wp_error( $person ) ) {
-				$given  = $person['attributes']['given_name'] ?? '';
-				$family = $person['attributes']['family_name'] ?? '';
-				$name   = trim( $given . ' ' . $family ) ?: $person_uuid;
-				$email  = $person['attributes']['primary_email_address'] ?? '';
-			}
+			$person = $a['_person'] ?? null;
+			$given  = $person['attributes']['given_name'] ?? '';
+			$family = $person['attributes']['family_name'] ?? '';
+			$name   = trim( $given . ' ' . $family ) ?: $person_uuid;
+			$email  = $person['attributes']['primary_email_address'] ?? '';
 
 			$seated[] = array(
 				'person_membership_uuid' => $a['id'],

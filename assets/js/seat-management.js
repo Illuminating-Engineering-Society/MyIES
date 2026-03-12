@@ -21,7 +21,7 @@
 	var $filterWrap    = $('#myies-seats-filter-wrap');
 	var $filter        = $('#myies-seats-filter');
 
-	var seatInfo       = null; // { max_assignments, unlimited_assignments, total_seated, seated[] }
+	var seatInfo       = null;
 	var allSeated      = [];
 	var currentPage    = 1;
 	var perPage        = 20;
@@ -95,7 +95,7 @@
 	}
 
 	// =========================================================================
-	// Render seated members (paginated)
+	// Render seated members (client-side pagination)
 	// =========================================================================
 	function getFilteredSeated() {
 		var term = $.trim($filter.val()).toLowerCase();
@@ -269,7 +269,6 @@
 			person_membership_uuid: pmUuid
 		}, function (res) {
 			if (res.success) {
-				// Remove locally and re-render without full reload
 				allSeated = allSeated.filter(function (s) {
 					return s.person_membership_uuid !== pmUuid;
 				});
