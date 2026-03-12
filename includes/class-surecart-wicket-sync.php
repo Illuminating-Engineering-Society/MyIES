@@ -404,15 +404,33 @@ class Wicket_Membership_Service {
         }
 
         foreach ($res['data'] as $entry) {
+            // Check if the membership tier type is "organization"
+            $tier_id = $entry['relationships']['membership']['data']['id'] ?? null;
+            if (!$tier_id) {
+                continue;
+            }
+
+            $tier = $included['memberships:' . $tier_id] ?? null;
+            $tier_type = $tier['attributes']['type'] ?? null;
+            if ($tier_type !== 'organization') {
+                continue;
+            }
+
+            // Found an org-type membership — get the organization_membership
             $org_mem_rel = $entry['relationships']['organization_membership']['data'] ?? null;
             if (empty($org_mem_rel)) {
                 continue;
             }
 
-            $org_mem_key = 'organization_memberships:' . $org_mem_rel['id'];
-            $org_mem     = $included[$org_mem_key] ?? null;
+            $org_mem = $included['organization_memberships:' . $org_mem_rel['id']] ?? null;
             if (!$org_mem) {
-                continue;
+                // Not in included — fetch it directly
+                $org_mem_res = $this->request('/organization_memberships/' . $org_mem_rel['id']);
+                if (!is_wp_error($org_mem_res) && !empty($org_mem_res['data'])) {
+                    $org_mem = $org_mem_res['data'];
+                } else {
+                    continue;
+                }
             }
 
             // Verify this org membership belongs to the target organization
@@ -421,17 +439,11 @@ class Wicket_Membership_Service {
                 continue;
             }
 
-            // Check it's still active
-            $ends_at = $org_mem['attributes']['ends_at'] ?? null;
-            if ($ends_at && strtotime($ends_at) < time()) {
-                continue;
-            }
-
             return [
                 'id'                       => $org_mem['id'],
-                'tier_uuid'                => $org_mem['relationships']['membership']['data']['id'] ?? null,
+                'tier_uuid'                => $tier_id,
                 'starts_at'                => $org_mem['attributes']['starts_at'] ?? null,
-                'ends_at'                  => $ends_at,
+                'ends_at'                  => $org_mem['attributes']['ends_at'] ?? null,
                 'max_assignments'          => $org_mem['attributes']['max_assignments'] ?? null,
                 'active_assignments_count' => $org_mem['attributes']['active_assignments_count'] ?? 0,
                 'unlimited_assignments'    => !empty($org_mem['attributes']['unlimited_assignments']),
