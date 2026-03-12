@@ -459,28 +459,36 @@ class Wicket_Membership_Service {
      * @return array  List of ['id' => person_membership_uuid, 'person_uuid' => ..., 'starts_at' => ..., 'ends_at' => ...]
      */
     public function get_org_membership_assignments(string $org_membership_uuid): array {
-        $res = $this->request("/organization_memberships/{$org_membership_uuid}/person_memberships?page[size]=100");
-
-        if (is_wp_error($res) || empty($res['data'])) {
-            return [];
-        }
-
         $assignments = [];
-        foreach ($res['data'] as $entry) {
-            $ends_at = $entry['attributes']['ends_at'] ?? null;
+        $page        = 1;
+        $page_size   = 100;
 
-            // Only include active assignments
-            if ($ends_at && strtotime($ends_at) < time()) {
-                continue;
+        do {
+            $res = $this->request("/organization_memberships/{$org_membership_uuid}/person_memberships?page[number]={$page}&page[size]={$page_size}");
+
+            if (is_wp_error($res) || empty($res['data'])) {
+                break;
             }
 
-            $assignments[] = [
-                'id'          => $entry['id'],
-                'person_uuid' => $entry['relationships']['person']['data']['id'] ?? null,
-                'starts_at'   => $entry['attributes']['starts_at'] ?? null,
-                'ends_at'     => $ends_at,
-            ];
-        }
+            foreach ($res['data'] as $entry) {
+                $ends_at = $entry['attributes']['ends_at'] ?? null;
+
+                // Only include active assignments
+                if ($ends_at && strtotime($ends_at) < time()) {
+                    continue;
+                }
+
+                $assignments[] = [
+                    'id'          => $entry['id'],
+                    'person_uuid' => $entry['relationships']['person']['data']['id'] ?? null,
+                    'starts_at'   => $entry['attributes']['starts_at'] ?? null,
+                    'ends_at'     => $ends_at,
+                ];
+            }
+
+            $count = count($res['data']);
+            $page++;
+        } while ($count >= $page_size);
 
         return $assignments;
     }
