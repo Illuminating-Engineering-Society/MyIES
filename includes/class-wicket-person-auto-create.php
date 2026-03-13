@@ -196,10 +196,7 @@ class Wicket_Person_Auto_Create {
                     'family_name' => $last_name,
                     'full_name' => trim($first_name . ' ' . $last_name),
                     'language' => 'en',
-                    'user' => array(
-                        'confirmed_at' => gmdate('Y-m-d\TH:i:s.000\Z'),
-                        'skip_confirmation_notification' => true,
-                    ),
+                    'user' => array(),
                 ),
                 'relationships' => array(
                     'emails' => array(
